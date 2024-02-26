@@ -3,7 +3,8 @@
 
 import numpy as np
 import pandas as pd
-from dynamic_foraging_utils import event_triggered_response, get_time_array
+from src.dynamic_foraging_analysis.\
+    dynamic_foraging_utils import event_triggered_response, get_time_array
 
 
 def test_get_time_array_with_sampling_rate():
