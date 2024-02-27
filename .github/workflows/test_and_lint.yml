@@ -20,6 +20,8 @@ jobs:
     - name: Install dependencies
       run: | 
         python -m pip install -e .[dev]
+        python -m pip install numpy
+        python -m pip install pandas
     - name: Run linter checks
       run: flake8 . && interrogate --verbose .
     - name: Run tests and coverage
