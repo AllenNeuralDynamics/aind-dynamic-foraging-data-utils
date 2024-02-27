@@ -23,7 +23,7 @@ jobs:
         python -m pip install numpy
         python -m pip install pandas
         python -m pip install flake8
-        python -m pip install coverage
+        python -m pip install coverage[toml]
         python -m pip install interrogate
     - name: Run linter checks
       run: flake8 . && interrogate --verbose .
