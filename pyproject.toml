@@ -3,8 +3,8 @@ requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dynamic_foraging_analysis"
-description = "Prints messages to stdout. Simple boilerplate for libraries."
+name = "aind_dynamic_foraging_data_utils"
+description = "Functions to help with postprocessing dynamic foraging data."
 license = {text = "MIT"}
 requires-python = ">=3.7"
 authors = [
@@ -36,7 +36,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.dynamic]
-version = {attr = "dynamic_foraging_analysis.__version__"}
+version = {attr = "aind_dynamic_foraging_data_utils.__version__"}
 
 [tool.black]
 line-length = 79
