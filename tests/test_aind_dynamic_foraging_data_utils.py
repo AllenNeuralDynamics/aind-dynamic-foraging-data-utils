@@ -3,7 +3,7 @@
 import unittest
 import numpy as np
 import pandas as pd
-from dynamic_foraging_analysis import dynamic_foraging_utils
+from aind_dynamic_foraging_data_utils import aind_dynamic_foraging_data_utils
 
 
 class DynamicForagingTest(unittest.TestCase):
