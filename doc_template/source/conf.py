@@ -1,4 +1,5 @@
 """Configuration file for the Sphinx documentation builder."""
+
 #
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
@@ -9,7 +10,7 @@ from datetime import date
 from os.path import abspath, dirname
 from pathlib import Path
 
-from dynamic_foraging_analysis import __version__ as package_version
+from aind_dynamic_foraging_data_utils import __version__ as package_version
 
 INSTITUTE_NAME = "Allen Institute for Neural Dynamics"
 
