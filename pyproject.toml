@@ -3,7 +3,7 @@ requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aind_dynamic_foraging_data_utils"
+name = "aind-dynamic-foraging-data-utils"
 description = "Functions to help with postprocessing dynamic foraging data."
 license = {text = "MIT"}
 requires-python = ">=3.7"
@@ -18,7 +18,8 @@ dynamic = ["version"]
 
 dependencies = [
     'pandas',
-    'numpy'
+    'numpy',
+    'pynwb'
 ]
 
 [project.optional-dependencies]
@@ -40,7 +41,7 @@ version = {attr = "aind_dynamic_foraging_data_utils.__version__"}
 
 [tool.black]
 line-length = 79
-target_version = ['py36']
+target_version = ['py37']
 exclude = '''
 
 (
@@ -61,7 +62,7 @@ exclude = '''
 
 [tool.coverage.run]
 omit = ["*__init__*"]
-source = ["tests"]
+source = ["aind_dynamic_foraging_data_utils", "tests"]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -70,7 +71,7 @@ exclude_lines = [
     "import",
     "pragma: no cover"
 ]
-fail_under = 100
+fail_under = 80
 
 [tool.isort]
 line_length = 79
