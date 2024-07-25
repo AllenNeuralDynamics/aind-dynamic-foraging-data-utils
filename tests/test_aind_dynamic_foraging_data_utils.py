@@ -16,7 +16,7 @@ class DynamicForagingTest(unittest.TestCase):
         a sampling_rate argument
         '''
         # this should give [-1, 1) with steps of 0.5, exclusive of the endpoint
-        t_array = dynamic_foraging_utils.get_time_array(
+        t_array = aind_dynamic_foraging_data_utils.get_time_array(
             t_start=-1,
             t_end=1,
             sampling_rate=2,
@@ -25,7 +25,7 @@ class DynamicForagingTest(unittest.TestCase):
         assert (t_array == np.array([-1., -0.5,  0.,  0.5])).all()
 
         # this should give [-1, 1] with steps of 0.5, inclusive of the endpoint
-        t_array = dynamic_foraging_utils.get_time_array(
+        t_array = aind_dynamic_foraging_data_utils.get_time_array(
             t_start=-1,
             t_end=1,
             sampling_rate=2,
@@ -36,7 +36,7 @@ class DynamicForagingTest(unittest.TestCase):
         # this should give [-1, 0.75) with steps of 0.5.
         # becuase the desired range (1.75) is not evenly divisible by the
         # step size (0.5), the array should end before the desired endpoint
-        t_array = dynamic_foraging_utils.get_time_array(
+        t_array = aind_dynamic_foraging_data_utils.get_time_array(
             t_start=-1,
             t_end=0.75,
             sampling_rate=2,
@@ -47,7 +47,7 @@ class DynamicForagingTest(unittest.TestCase):
         # this should give [-1, 0.75) with steps of 0.5.
         # becuase the desired range (1.75) is not evenly divisible by the
         # step size (0.5), the array should end before the desired endpoint
-        t_array = dynamic_foraging_utils.get_time_array(
+        t_array = aind_dynamic_foraging_data_utils.get_time_array(
             t_start=-1,
             t_end=0.75,
             sampling_rate=2,
@@ -60,7 +60,7 @@ class DynamicForagingTest(unittest.TestCase):
         tests the `get_time_array` function while passing a step_size argument
         '''
         # this should give [-1, 1) with steps of 0.5, exclusive of the endpoint
-        t_array = dynamic_foraging_utils.get_time_array(
+        t_array = aind_dynamic_foraging_data_utils.get_time_array(
             t_start=-1,
             t_end=1,
             step_size=0.5,
@@ -69,7 +69,7 @@ class DynamicForagingTest(unittest.TestCase):
         assert (t_array == np.array([-1., -0.5,  0.,  0.5])).all()
 
         # this should give [-1, 1] with steps of 0.5, inclusive of the endpoint
-        t_array = dynamic_foraging_utils.get_time_array(
+        t_array = aind_dynamic_foraging_data_utils.get_time_array(
             t_start=-1,
             t_end=1,
             step_size=0.5,
@@ -81,7 +81,7 @@ class DynamicForagingTest(unittest.TestCase):
         # becuase the desired range (1.75) is not evenly
         # divisible by the step size (0.5), the array should
         # end before the desired endpoint
-        t_array = dynamic_foraging_utils.get_time_array(
+        t_array = aind_dynamic_foraging_data_utils.get_time_array(
             t_start=-1,
             t_end=0.75,
             step_size=0.5,
@@ -93,7 +93,7 @@ class DynamicForagingTest(unittest.TestCase):
         # becuase the desired range (1.75) is not evenly
         # divisible by the step size (0.5),
         # the array should end before the desired endpoint
-        t_array = dynamic_foraging_utils.get_time_array(
+        t_array = aind_dynamic_foraging_data_utils.get_time_array(
             t_start=-1,
             t_end=0.75,
             step_size=0.5,
@@ -118,7 +118,7 @@ class DynamicForagingTest(unittest.TestCase):
         df_copy = df.copy(deep=True)
 
         # Make an event triggered response
-        etr = dynamic_foraging_utils.event_triggered_response(
+        etr = aind_dynamic_foraging_data_utils.event_triggered_response(
             data=df,
             t='time',
             y='sinusoid',
