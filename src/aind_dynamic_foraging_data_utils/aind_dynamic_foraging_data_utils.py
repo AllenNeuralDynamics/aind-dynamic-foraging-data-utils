@@ -1,8 +1,10 @@
 """Utility functions for processing dynamic foraging data."""
+
+import re
+
 import numpy as np
 import pandas as pd
 from pynwb import NWBHDF5IO
-import re
 
 LEFT, RIGHT = 0, 1
 
@@ -17,8 +19,10 @@ def foraging_eff_no_baiting(reward_rate, p_Ls, p_Rs, random_number_L=None, rando
     reward_refills = np.vstack([p_Ls >= random_number_L, p_Rs >= random_number_R])
     # Greedy choice, assuming the agent knows the groundtruth
     optimal_choices = np.argmax([p_Ls, p_Rs], axis=0)
-    optimal_rewards = reward_refills[0][optimal_choices == 0].sum() + \
-        reward_refills[1][optimal_choices == 1].sum()
+    optimal_rewards = (
+        reward_refills[0][optimal_choices == 0].sum()
+        + reward_refills[1][optimal_choices == 1].sum()
+    )
     for_eff_optimal_random_seed = reward_rate / (optimal_rewards / len(optimal_choices))
     return for_eff_optimal, for_eff_optimal_random_seed
 
@@ -35,9 +39,7 @@ def foraging_eff_baiting(
             p_stars[i] = p_max
         else:
             m_star = np.floor(np.log(1 - p_max) / np.log(1 - p_min))
-            p_stars[i] = p_max + (
-                1 - (1 - p_min) ** (m_star + 1) - p_max**2
-            ) / (m_star + 1)
+            p_stars[i] = p_max + (1 - (1 - p_min) ** (m_star + 1) - p_max**2) / (m_star + 1)
 
     for_eff_optimal = reward_rate / np.nanmean(p_stars)
 
@@ -45,9 +47,7 @@ def foraging_eff_baiting(
         return for_eff_optimal, np.nan
 
     # --- Optimal-actual (uses the actual random numbers by simulation)
-    block_trans = np.where(np.diff(np.hstack([np.inf, p_Ls, np.inf])))[
-        0
-    ].tolist()
+    block_trans = np.where(np.diff(np.hstack([np.inf, p_Ls, np.inf])))[0].tolist()
     reward_refills = [p_Ls >= random_number_L, p_Rs >= random_number_R]
     reward_optimal_random_seed = 0
 
@@ -59,16 +59,13 @@ def foraging_eff_baiting(
 
         # Get optimal choice pattern and expected optimal rate
         if p_min == 0 or p_max >= 1:
-            this_choice = np.array(
-                [1] * (b_end - b_start)
-            )  # Greedy is obviously optimal
+            this_choice = np.array([1] * (b_end - b_start))  # Greedy is obviously optimal
         else:
             m_star = np.floor(np.log(1 - p_max) / np.log(1 - p_min))
             this_choice = np.array(
-                (
-                    ([1] * int(m_star) + [0])
-                    * (1 + int((b_end - b_start) / (m_star + 1)))
-                )[: b_end - b_start]
+                (([1] * int(m_star) + [0]) * (1 + int((b_end - b_start) / (m_star + 1))))[
+                    : b_end - b_start
+                ]
             )
 
         # Do simulation, using optimal choice pattern and actual random numbers
@@ -88,9 +85,7 @@ def foraging_eff_baiting(
             reward_remain[this_choice[t]] = 0
 
         if reward_optimal_random_seed:
-            for_eff_optimal_random_seed = reward_rate / (
-                reward_optimal_random_seed / len(p_Ls)
-            )
+            for_eff_optimal_random_seed = reward_rate / (reward_optimal_random_seed / len(p_Ls))
         else:
             for_eff_optimal_random_seed = np.nan
 
@@ -101,15 +96,9 @@ def nwb_to_df(nwb):
     df_trials = nwb.trials.to_dataframe()
 
     # Reformat data
-    choice_history = df_trials.animal_response.map(
-        {0: 0, 1: 1, 2: np.nan}
-    ).values
-    reward_history = np.vstack(
-        [df_trials.rewarded_historyL, df_trials.rewarded_historyR]
-    )
-    p_reward = np.vstack(
-        [df_trials.reward_probabilityL, df_trials.reward_probabilityR]
-    )
+    choice_history = df_trials.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
+    reward_history = np.vstack([df_trials.rewarded_historyL, df_trials.rewarded_historyR])
+    p_reward = np.vstack([df_trials.reward_probabilityL, df_trials.reward_probabilityR])
 
     # -- Session-based table --
     # - Meta data -
@@ -173,12 +162,8 @@ def nwb_to_df(nwb):
     ).groups()[0]
 
     extra_water = float(extra_water) if extra_water != "" else 0
-    weight_after_session = (
-        float(weight_after_session) if weight_after_session != "" else np.nan
-    )
-    weight_before_session = (
-        float(nwb.subject.weight) if nwb.subject.weight != "" else np.nan
-    )
+    weight_after_session = float(weight_after_session) if weight_after_session != "" else np.nan
+    weight_before_session = float(nwb.subject.weight) if nwb.subject.weight != "" else np.nan
 
     dict_meta = {
         "rig": rig,
@@ -229,9 +214,7 @@ def nwb_to_df(nwb):
     # ...
 
     foraging_eff_func = (
-        foraging_eff_baiting
-        if "bait" in nwb.protocol.lower()
-        else foraging_eff_no_baiting
+        foraging_eff_baiting if "bait" in nwb.protocol.lower() else foraging_eff_no_baiting
     )
     foraging_eff, foraging_eff_random_seed = foraging_eff_func(
         reward_rate, p_reward[LEFT, :], p_reward[RIGHT, :]
@@ -270,8 +253,7 @@ def nwb_to_df(nwb):
         )
         df_session["auto_train", "curriculum_schema_version"] = (
             np.nan
-            if df_trials.auto_train_curriculum_schema_version.mode()[0]
-            == "none"
+            if df_trials.auto_train_curriculum_schema_version.mode()[0] == "none"
             else df_trials.auto_train_curriculum_schema_version.mode()[0]
         )
         df_session["auto_train", "current_stage_actual"] = (
@@ -288,12 +270,7 @@ def nwb_to_df(nwb):
         # Add a flag to indicate whether any of the auto train settings were changed
         # during the training
         df_session["auto_train", "if_consistent_within_session"] = (
-            len(
-                df_trials.groupby(
-                    [col for col in df_trials.columns if "auto_train" in col]
-                )
-            )
-            == 1
+            len(df_trials.groupby([col for col in df_trials.columns if "auto_train" in col])) == 1
         )
     else:
         for field in [
@@ -326,9 +303,7 @@ def create_df_session(nwb_filename):
     df_session.columns = df_session.columns.droplevel("type")
     df_session = df_session.reset_index()
     df_session["ses_idx"] = (
-        df_session["subject_id"].values
-        + "_"
-        + df_session["session_date"].values
+        df_session["subject_id"].values + "_" + df_session["session_date"].values
     )
     df_session = df_session.rename(columns={"variable": "session_num"})
     return df_session
@@ -361,14 +336,11 @@ def create_df_trials(nwb_filename):
     for col in df_ses_trials.columns:
         if ("time" in col) and (col != "goCue_start_time"):
             df_ses_trials.loc[:, col] = (
-                df_ses_trials[col].values
-                - df_ses_trials["goCue_start_time"].values
+                df_ses_trials[col].values - df_ses_trials["goCue_start_time"].values
             )
     df_ses_trials["goCue_time_absolute"] = absolute_time
     df_ses_trials["goCue_start_time"] = 0.0
-    events_ses = {
-        key: nwb.acquisition[key].timestamps[:] - t0 for key in key_from_acq
-    }
+    events_ses = {key: nwb.acquisition[key].timestamps[:] - t0 for key in key_from_acq}
 
     for event in [
         "left_lick_time",
@@ -380,14 +352,8 @@ def create_df_trials(nwb_filename):
         df_ses_trials[event] = df_ses_trials.apply(
             lambda x: np.round(
                 event_times[
-                    (
-                        event_times
-                        > (x["goCue_start_time"] + x["goCue_time_absolute"])
-                    )
-                    & (
-                        event_times
-                        < (x["stop_time"] + x["goCue_time_absolute"])
-                    )
+                    (event_times > (x["goCue_start_time"] + x["goCue_time_absolute"]))
+                    & (event_times < (x["stop_time"] + x["goCue_time_absolute"]))
                 ]
                 - x["goCue_time_absolute"],
                 4,
@@ -408,11 +374,7 @@ def create_df_trials(nwb_filename):
         axis=1,
     )
     df_ses_trials["choice_time"] = df_ses_trials.apply(
-        lambda x: np.nanmin(
-            np.concatenate(
-                [[np.nan], x["right_lick_time"], x["left_lick_time"]]
-            )
-        ),
+        lambda x: np.nanmin(np.concatenate([[np.nan], x["right_lick_time"], x["left_lick_time"]])),
         axis=1,
     )
     df_ses_trials["reward"] = df_ses_trials.rewarded_historyR.astype(
@@ -536,9 +498,7 @@ def get_time_array(
         # add an extra step if including endpoint
         n_steps += 1
 
-    t_array = np.linspace(
-        t_start, t_end_adjusted, int(n_steps), endpoint=include_endpoint
-    )
+    t_array = np.linspace(t_start, t_end_adjusted, int(n_steps), endpoint=include_endpoint)
 
     return t_array
 
@@ -580,9 +540,7 @@ def slice_inds_and_offsets(
     trace_len = (time_window[1] - time_window[0]) * sampling_rate
     start_ind_offset = int(time_window[0] * sampling_rate)
     end_ind_offset = int(start_ind_offset + trace_len) + int(include_endpoint)
-    trace_timebase = (
-        np.arange(start_ind_offset, end_ind_offset) / sampling_rate
-    )
+    trace_timebase = np.arange(start_ind_offset, end_ind_offset) / sampling_rate
 
     return event_indices, start_ind_offset, end_ind_offset, trace_timebase
 
@@ -607,8 +565,7 @@ def index_of_nearest_value(data_timestamps, event_timestamps):
     # is the value closer to data at insertion_ind or insertion_ind-1?
     ind_diff = data_timestamps[insertion_ind] - event_timestamps
     ind_minus_one_diff = np.abs(
-        data_timestamps[np.clip(insertion_ind - 1, 0, np.inf).astype(int)]
-        - event_timestamps
+        data_timestamps[np.clip(insertion_ind - 1, 0, np.inf).astype(int)] - event_timestamps
     )
 
     event_indices = insertion_ind - (ind_diff > ind_minus_one_diff).astype(int)
@@ -757,9 +714,7 @@ def event_triggered_response(
     assert (
         t_before is None or t_start is None
     ), "cannot pass both t_start and t_before"  # noqa: E501
-    assert (
-        t_after is None or t_end is None
-    ), "cannot pass both t_after and t_end"  # noqa: E501
+    assert t_after is None or t_end is None, "cannot pass both t_after and t_end"  # noqa: E501
 
     if interpolate is False:
         assert (
@@ -806,9 +761,9 @@ def event_triggered_response(
             if len(data_slice) == 0:
                 data_dict.update(
                     {
-                        "event_{}_t={}".format(
-                            event_number, event_time
-                        ): np.full(len(t_array), np.nan)
+                        "event_{}_t={}".format(event_number, event_time): np.full(
+                            len(t_array), np.nan
+                        )
                     }
                 )
 
@@ -821,9 +776,7 @@ def event_triggered_response(
             else:
                 data_dict.update(
                     {
-                        "event_{}_t={}".format(
-                            event_number, event_time
-                        ): np.interp(
+                        "event_{}_t={}".format(event_number, event_time): np.interp(
                             data_dict["time"],
                             data_slice.index - event_time,
                             data_slice.values,
@@ -850,10 +803,7 @@ def event_triggered_response(
             sampling_rate=None,
             include_endpoint=True,
         )
-        all_inds = (
-            event_indices
-            + np.arange(start_ind_offset, end_ind_offset)[:, None]
-        )
+        all_inds = event_indices + np.arange(start_ind_offset, end_ind_offset)[:, None]
         wide_etr = (
             pd.DataFrame(
                 data[y].values.T[all_inds],
@@ -878,19 +828,13 @@ def event_triggered_response(
 
         # add an "event_number" column that contains the event number
         tidy_etr["event_number"] = (
-            tidy_etr["variable"]
-            .map(lambda s: s.split("event_")[1].split("_")[0])
-            .astype(int)
+            tidy_etr["variable"].map(lambda s: s.split("event_")[1].split("_")[0]).astype(int)
         )
 
         # add an "event_time" column that contains the event time ()
-        tidy_etr["event_time"] = (
-            tidy_etr["variable"].map(lambda s: s.split("t=")[1]).astype(float)
-        )
+        tidy_etr["event_time"] = tidy_etr["variable"].map(lambda s: s.split("t=")[1]).astype(float)
 
         # drop the "variable" column, rename the "value" column
-        tidy_etr = tidy_etr.drop(columns=["variable"]).rename(
-            columns={"value": y}
-        )
+        tidy_etr = tidy_etr.drop(columns=["variable"]).rename(columns={"value": y})
         # return the tidy event triggered responses
         return tidy_etr
