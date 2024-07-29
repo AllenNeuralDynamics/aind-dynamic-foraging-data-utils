@@ -4,14 +4,38 @@ import unittest
 
 import numpy as np
 import pandas as pd
+import glob
 
-from aind_dynamic_foraging_data_utils import aind_dynamic_foraging_data_utils
+from src.aind_dynamic_foraging_data_utils import aind_dynamic_foraging_data_utils
 
 
 class DynamicForagingTest(unittest.TestCase):
     """
     A class for testing the dynamic_foraging_utils module.
     """
+    def test_create_df_session(self):
+        """
+        tests the `create_df_session` function
+        """
+        nwb_files = glob.glob('./tests/nwb/**.nwb')
+        # create a dataframe for each nwb file
+
+        df = pd.DataFrame()
+        for nwb_file in nwb_files:
+            df = pd.concat([df, aind_dynamic_foraging_data_utils.create_df_session(nwb_file)])
+        # check that the dataframe has the correct rows
+        assert (len(df) == len(nwb_files))
+
+    def test_create_df_trials(self):
+        """
+        tests the `create_df_trials` function
+        """
+        nwb_files = glob.glob('./tests/nwb/**.nwb')
+        # create a dataframe for one nwb file
+        df = aind_dynamic_foraging_data_utils.create_df_trials(nwb_files[0])
+        # check that the dataframe has correct session names
+        session_name = '_'.join(nwb_files[0].split('/')[-1].split('_')[:-1])
+        assert (df.ses_idx[0] == session_name)
 
     def test_get_time_array_with_sampling_rate(self):
         """
