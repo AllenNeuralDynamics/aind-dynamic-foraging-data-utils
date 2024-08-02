@@ -18,7 +18,6 @@ def nwb_to_df(nwb):
     # Reformat data
     choice_history = df_trials.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
     reward_history = np.vstack([df_trials.rewarded_historyL, df_trials.rewarded_historyR])
-    p_reward = np.vstack([df_trials.reward_probabilityL, df_trials.reward_probabilityR])
 
     # -- Session-based table --
     # - Meta data -
