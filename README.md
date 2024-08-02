@@ -1,4 +1,5 @@
-# dynamic-foraging-analysis
+# aind-dynamic-foraging-data-utils
+
 
 [![License](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
 ![Code Style](https://img.shields.io/badge/code%20style-black-black)
@@ -10,7 +11,11 @@
 
 
 ## Scope
-This repository contains tools for access and processing of dynamic foraging task data in python. It assumes that each session has been processed into an NWB file and placed on AWS. This NWB file contains all simultaneous neural data with time-stamps already aligned.
+Purpose: Ingests NWB and spits out dataframes with the relevant information. Focused on dynamic foraging. Other tasks can branch and build task-specific utils.
+Inputs are nwbs, outputs are dataframes (tidy and not)
+Dependencies: xarray (includes numpy and pandas), scikit-learn (includes scipy), matplotlib
+
+
 
 
 ## Installation
