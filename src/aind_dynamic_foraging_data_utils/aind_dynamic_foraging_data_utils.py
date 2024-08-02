@@ -403,11 +403,13 @@ def create_events_df(nwb):
 
     # Build list of all event types in acqusition, ignore FIP events
     event_types = set(nwb.acquisition.keys())
-    ignore_types = set(['FIP_falling_time', 'FIP_rising_time',
+    ignore_types = set([
+        'FIP_falling_time', 'FIP_rising_time',
         'G_1', 'G_1_preprocessed', 'G_2', 'G_2_preprocessed',
         'Iso_1', 'Iso_1_preprocessed', 'Iso_1', 'Iso_1_preprocessed',
         'R_1', 'R_1_preprocessed', 'R_2', 'R_2_preprocessed',
-        'Iso_2', 'Iso_2_preprocessed'])
+        'Iso_2', 'Iso_2_preprocessed'
+    ])
     event_types -= ignore_types
 
     # Iterate over event types and build a dataframe of each
@@ -419,13 +421,13 @@ def create_events_df(nwb):
         labels = [e]*len(data)
         df = pd.DataFrame({'timestamps':stamps,'data':data,'event':labels})
         events.append(df)
-    
+ 
     # Build dataframe by concatenating each event
     df = pd.concat(events).reset_index(drop=True)
     df = df.sort_values(by='timestamps')
     df = df.dropna(subset='timestamps')
 
-    return df    
+    return df
 
 
 def get_time_array(
