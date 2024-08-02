@@ -395,6 +395,37 @@ def create_df_trials(nwb_filename):
     # pickle_file_name = result_folder + '/' + f'{session_id}_trials.pkl'
     # pd.to_pickle(df_ses_trials, pickle_file_name)
 
+def create_events_df(nwb):
+    '''
+    returns a tidy dataframe of the events in the nwb file  
+    '''
+
+    # Build list of all event types in acqusition, ignore FIP events
+    event_types = set(nwb.acquisition.keys())
+    ignore_types = set(['FIP_falling_time','FIP_rising_time',
+        'G_1','G_1_preprocessed','G_2','G_2_preprocessed',
+        'Iso_1','Iso_1_preprocessed','Iso_1','Iso_1_preprocessed',
+        'R_1','R_1_preprocessed', 'R_2','R_2_preprocessed',
+        'Iso_2','Iso_2_preprocessed'])
+    event_types -= ignore_types
+
+    # Iterate over event types and build a dataframe of each
+    events = []
+    for e in event_types:
+        # For each event, get timestamps, data, and label
+        stamps = nwb.acquisition[e].timestamps[:]
+        data = nwb.acquisition[e].data[:]
+        labels = [e]*len(data)
+        df = pd.DataFrame({'timestamps':stamps,'data':data,'event':labels})
+        events.append(df)
+    
+    # Build dataframe by concatenating each event
+    df = pd.concat(events).reset_index(drop=True)
+    df = df.sort_values(by='timestamps')
+    df = df.dropna(subset='timestamps')
+
+    return df    
+
 
 def get_time_array(
     t_start, t_end, sampling_rate=None, step_size=None, include_endpoint=True
