@@ -1,10 +1,12 @@
 """Utility functions for processing dynamic foraging data."""
 
+import os
 import re
 
 import numpy as np
 import pandas as pd
 from pynwb import NWBHDF5IO
+from hdmf_zarr import NWBZarrIO
 
 LEFT, RIGHT = 0, 1
 
@@ -287,10 +289,35 @@ def nwb_to_df(nwb):
     return df_session
 
 
+def load_nwb_from_filename(filename):
+    """
+    Load NWB from file, checking for HDf5 or Zarr
+    if filename is not a string, then return the input, assuming its the NWB file already
+    """
+
+    if type(filename) is str:
+        if os.path.isdir(filename):
+            io = NWBZarrIO(filename, mode="r")
+            nwb = io.read()
+            return nwb
+        elif os.path.isfile(filename):
+            io = NWBHDF5IO(filename, mode="r")
+            nwb = io.read()
+            return nwb
+        else:
+            raise FileNotFoundError(filename)
+    else:
+        # Assuming its already an NWB
+        return filename
+
+
 # % Process nwb and create df_session for every single session
 def create_df_session(nwb_filename):
-    io = NWBHDF5IO(nwb_filename, mode="r")
-    nwb = io.read()
+    """
+    ?
+    """
+    nwb = load_nwb_from_filename(nwb_filename)
+
     df_session = nwb_to_df(nwb)
 
     # subject_id = df_session.index[0][0]
@@ -311,6 +338,9 @@ def create_df_session(nwb_filename):
 
 # % Process nwb and create df_trials for every single session
 def create_df_trials(nwb_filename):
+
+    nwb = load_nwb_from_filename(nwb_filename)
+
     key_from_acq = [
         "left_lick_time",
         "right_lick_time",
@@ -319,8 +349,7 @@ def create_df_trials(nwb_filename):
         "FIP_falling_time",
         "FIP_rising_time",
     ]
-    io = NWBHDF5IO(nwb_filename, mode="r")
-    nwb = io.read()
+
     subject_id, session_date, session_json_time = re.match(
         r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<time>.*))\.json",
         nwb.session_id,
@@ -396,10 +425,12 @@ def create_df_trials(nwb_filename):
     # pd.to_pickle(df_ses_trials, pickle_file_name)
 
 
-def create_events_df(nwb):
+def create_events_df(nwb_filename):
     """
     returns a tidy dataframe of the events in the nwb file
     """
+
+    nwb = load_nwb_from_filename(nwb_filename)
 
     # Build list of all event types in acqusition, ignore FIP events
     event_types = set(nwb.acquisition.keys())
