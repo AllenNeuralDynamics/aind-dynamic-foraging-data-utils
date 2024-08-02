@@ -11,6 +11,7 @@
 import numpy as np
 import pandas as pd
 
+
 def get_time_array(
     t_start, t_end, sampling_rate=None, step_size=None, include_endpoint=True
 ):  # NOQA E501

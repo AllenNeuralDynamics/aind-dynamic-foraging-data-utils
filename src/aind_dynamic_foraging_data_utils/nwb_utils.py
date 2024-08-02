@@ -316,8 +316,9 @@ def load_nwb_from_filename(filename):
         # Assuming its already an NWB
         return filename
 
+
 def create_df_session(nwb_filename):
-    if (type(nwb_filename) is not str) and (hasattr(nwb_filename, '__iter__')):
+    if (type(nwb_filename) is not str) and (hasattr(nwb_filename, "__iter__")):
         dfs = []
         for nwb_file in nwb_filename:
             dfs.append(create_single_df_session(nwb_file))
@@ -325,10 +326,11 @@ def create_df_session(nwb_filename):
     else:
         return create_single_df_session(nwb_filename)
 
+
 # % Process nwb and create df_session for every single session
 def create_single_df_session(nwb_filename):
     """
-        create a dataframe for a single session
+    create a dataframe for a single session
     """
     nwb = load_nwb_from_filename(nwb_filename)
 
@@ -487,5 +489,3 @@ def create_events_df(nwb_filename):
     df = df.dropna(subset="timestamps")
 
     return df
-
-
