@@ -10,7 +10,9 @@ LEFT, RIGHT = 0, 1
 
 
 def foraging_eff_no_baiting(reward_rate, p_Ls, p_Rs, random_number_L=None, random_number_R=None):
-    # Calculate foraging efficiency (only for 2lp)
+    """
+    Calculate foraging efficiency (only for 2lp)
+    """
     # --- Optimal-aver (use optimal expectation as 100% efficiency) ---
     for_eff_optimal = reward_rate / np.nanmean(np.max([p_Ls, p_Rs], axis=0))
     if random_number_L is None:
@@ -27,9 +29,10 @@ def foraging_eff_no_baiting(reward_rate, p_Ls, p_Rs, random_number_L=None, rando
     return for_eff_optimal, for_eff_optimal_random_seed
 
 
-def foraging_eff_baiting(
-    reward_rate, p_Ls, p_Rs, random_number_L=None, random_number_R=None
-):  # Calculate foraging efficiency (only for 2lp)
+def foraging_eff_baiting(reward_rate, p_Ls, p_Rs, random_number_L=None, random_number_R=None):
+    """
+    Calculate foraging efficiency (only for 2lp)
+    """
     # --- Optimal-aver (use optimal expectation as 100% efficiency) ---
     p_stars = np.zeros_like(p_Ls)
     for i, (p_L, p_R) in enumerate(zip(p_Ls, p_Rs)):  # Sum over all ps
@@ -93,6 +96,9 @@ def foraging_eff_baiting(
 
 
 def nwb_to_df(nwb):
+    """
+    given a nwb file, output a tidy dataframe
+    """
     df_trials = nwb.trials.to_dataframe()
 
     # Reformat data
@@ -287,8 +293,33 @@ def nwb_to_df(nwb):
     return df_session
 
 
-# % Process nwb and create df_session for every single session
 def create_df_session(nwb_filename):
+    """
+    Create dataframes from nwb filenames. Can take in individual files or list of files
+    Parameters:
+    -----------
+
+
+    Returns:
+    --------
+
+
+    """
+    if isinstance(nwb_filename, str):
+        return create_single_df_session(nwb_filename)
+    else:
+        df = pd.DataFrame()
+        for nwb_file in nwb_filename:
+            df = pd.concat([df, create_df_session(nwb_file)])
+
+        return df
+
+
+def create_single_df_session(nwb_filename):
+    """
+    Process nwb and create df_session for every single session
+    """
+
     io = NWBHDF5IO(nwb_filename, mode="r")
     nwb = io.read()
     df_session = nwb_to_df(nwb)
@@ -309,8 +340,11 @@ def create_df_session(nwb_filename):
     return df_session
 
 
-# % Process nwb and create df_trials for every single session
 def create_df_trials(nwb_filename):
+    """
+    Process nwb and create df_trials for every single session
+    """
+
     key_from_acq = [
         "left_lick_time",
         "right_lick_time",
@@ -319,6 +353,7 @@ def create_df_trials(nwb_filename):
         "FIP_falling_time",
         "FIP_rising_time",
     ]
+
     io = NWBHDF5IO(nwb_filename, mode="r")
     nwb = io.read()
     subject_id, session_date, session_json_time = re.match(
