@@ -12,7 +12,9 @@ LEFT, RIGHT = 0, 1
 
 
 def foraging_eff_no_baiting(reward_rate, p_Ls, p_Rs, random_number_L=None, random_number_R=None):
-    # Calculate foraging efficiency (only for 2lp)
+    """
+    Calculate foraging efficiency (only for 2lp)
+    """
     # --- Optimal-aver (use optimal expectation as 100% efficiency) ---
     for_eff_optimal = reward_rate / np.nanmean(np.max([p_Ls, p_Rs], axis=0))
     if random_number_L is None:
@@ -29,9 +31,10 @@ def foraging_eff_no_baiting(reward_rate, p_Ls, p_Rs, random_number_L=None, rando
     return for_eff_optimal, for_eff_optimal_random_seed
 
 
-def foraging_eff_baiting(
-    reward_rate, p_Ls, p_Rs, random_number_L=None, random_number_R=None
-):  # Calculate foraging efficiency (only for 2lp)
+def foraging_eff_baiting(reward_rate, p_Ls, p_Rs, random_number_L=None, random_number_R=None):
+    """
+    Calculate foraging efficiency (only for 2lp)
+    """
     # --- Optimal-aver (use optimal expectation as 100% efficiency) ---
     p_stars = np.zeros_like(p_Ls)
     for i, (p_L, p_R) in enumerate(zip(p_Ls, p_Rs)):  # Sum over all ps
@@ -95,6 +98,9 @@ def foraging_eff_baiting(
 
 
 def nwb_to_df(nwb):
+    """
+    given a nwb file, output a tidy dataframe
+    """
     df_trials = nwb.trials.to_dataframe()
 
     # Reformat data
@@ -312,7 +318,7 @@ def load_nwb_from_filename(filename):
 
 
 # % Process nwb and create df_session for every single session
-def create_df_session(nwb_filename):
+def create_single_df_session(nwb_filename):
     """
     ?
     """
@@ -336,9 +342,10 @@ def create_df_session(nwb_filename):
     return df_session
 
 
-# % Process nwb and create df_trials for every single session
 def create_df_trials(nwb_filename):
-
+    """
+    Process nwb and create df_trials for every single session
+    """
     nwb = load_nwb_from_filename(nwb_filename)
 
     key_from_acq = [
