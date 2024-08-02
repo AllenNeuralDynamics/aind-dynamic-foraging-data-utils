@@ -1,4 +1,12 @@
-"""Utility functions for processing dynamic foraging data."""
+"""
+Utility functions for processing dynamic foraging data.
+    load_nwb_from_filename
+    create_single_df_session_inner
+    create_df_session
+    create_single_df_session
+    create_df_trials
+    create_events_df
+"""
 
 import os
 import re
@@ -8,12 +16,47 @@ import pandas as pd
 from pynwb import NWBHDF5IO
 from hdmf_zarr import NWBZarrIO
 
+## TODO THIS PR
+# df_session, df_trials don't work with new sessions
+# add test: ensure that rewards in df_trials matches events
+# add test: ensure that licks in df_trials matches events
+# add function: add trial go cue to events table
+# add test: ensure go cue numbers match in events/df_trials
 
-def nwb_to_df(nwb):
+## TODO LATER
+# Add issue to test alignment tools
+# add issue to get more tools from mindscope utils
+# add issue to document alignment tools
+
+
+def load_nwb_from_filename(filename):
+    """
+    Load NWB from file, checking for HDF5 or Zarr
+    if filename is not a string, then return the input, assuming its the NWB file already
+    """
+
+    if type(filename) is str:
+        if os.path.isdir(filename):
+            io = NWBZarrIO(filename, mode="r")
+            nwb = io.read()
+            return nwb
+        elif os.path.isfile(filename):
+            io = NWBHDF5IO(filename, mode="r")
+            nwb = io.read()
+            return nwb
+        else:
+            raise FileNotFoundError(filename)
+    else:
+        # Assuming its already an NWB
+        return filename
+
+
+def create_single_df_session_inner(nwb):
     """
     given a nwb file, output a tidy dataframe
     """
     df_trials = nwb.trials.to_dataframe()
+    ## TODO, does this function work for new files?
 
     # Reformat data
     choice_history = df_trials.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
@@ -205,28 +248,6 @@ def nwb_to_df(nwb):
     return df_session
 
 
-def load_nwb_from_filename(filename):
-    """
-    Load NWB from file, checking for HDF5 or Zarr
-    if filename is not a string, then return the input, assuming its the NWB file already
-    """
-
-    if type(filename) is str:
-        if os.path.isdir(filename):
-            io = NWBZarrIO(filename, mode="r")
-            nwb = io.read()
-            return nwb
-        elif os.path.isfile(filename):
-            io = NWBHDF5IO(filename, mode="r")
-            nwb = io.read()
-            return nwb
-        else:
-            raise FileNotFoundError(filename)
-    else:
-        # Assuming its already an NWB
-        return filename
-
-
 def create_df_session(nwb_filename):
     if (type(nwb_filename) is not str) and (hasattr(nwb_filename, "__iter__")):
         dfs = []
@@ -244,14 +265,7 @@ def create_single_df_session(nwb_filename):
     """
     nwb = load_nwb_from_filename(nwb_filename)
 
-    df_session = nwb_to_df(nwb)
-
-    # subject_id = df_session.index[0][0]
-    # session_date = df_session.index[0][1]
-    # nwb_suffix = df_session.index[0][2]
-    # session_id = (
-    #     f'{subject_id}_{session_date}{f"_{nwb_suffix}" if nwb_suffix else ""}'
-    # )
+    df_session = create_single_df_session_inner(nwb)
 
     df_session.columns = df_session.columns.droplevel("type")
     df_session = df_session.reset_index()
@@ -277,6 +291,7 @@ def create_df_trials(nwb_filename):
         "FIP_rising_time",
     ]
 
+    # TODO fails for new session
     subject_id, session_date, session_json_time = re.match(
         r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<time>.*))\.json",
         nwb.session_id,
@@ -345,11 +360,6 @@ def create_df_trials(nwb_filename):
         ]
     )
     return df_ses_trials
-    # result_folder = os.path.join(save_folder_df, session_id)
-    # os.makedirs(result_folder, exist_ok=True)
-
-    # pickle_file_name = result_folder + '/' + f'{session_id}_trials.pkl'
-    # pd.to_pickle(df_ses_trials, pickle_file_name)
 
 
 def create_events_df(nwb_filename):
@@ -394,8 +404,8 @@ def create_events_df(nwb_filename):
         events.append(df)
 
     # Build dataframe by concatenating each event
-    df = pd.concat(events).reset_index(drop=True)
+    df = pd.concat(events)
     df = df.sort_values(by="timestamps")
-    df = df.dropna(subset="timestamps")
+    df = df.dropna(subset="timestamps").reset_index(drop=True)
 
     return df
