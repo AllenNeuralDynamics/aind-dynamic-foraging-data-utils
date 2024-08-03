@@ -18,16 +18,19 @@ from hdmf_zarr import NWBZarrIO
 
 ## TODO THIS PR
 # df_session, df_trials don't work with new sessions
+# Probably just add one new NWB to data?
 # add test: ensure that rewards in df_trials matches events
 # add test: ensure that licks in df_trials matches events
 # add function: add trial go cue to events table
 # add test: ensure go cue numbers match in events/df_trials
+# Update pyproject and requirements.txt, with hdmf_zarr. 
 
 ## TODO LATER
 # Add issue to test alignment tools
 # add issue to get more tools from mindscope utils
 # add issue to document alignment tools
-
+# random ad-hoc fixes for specific sessions shouldn't really be covered here. They should be fixed in the NWB, right?
+# the df_session from stefano can be cleaned up
 
 def load_nwb_from_filename(filename):
     """
@@ -56,7 +59,6 @@ def create_single_df_session_inner(nwb):
     given a nwb file, output a tidy dataframe
     """
     df_trials = nwb.trials.to_dataframe()
-    ## TODO, does this function work for new files?
 
     # Reformat data
     choice_history = df_trials.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
@@ -68,32 +70,38 @@ def create_single_df_session_inner(nwb):
     session_date_from_meta = session_start_time_from_meta.strftime("%Y-%m-%d")
     subject_id_from_meta = nwb.subject.subject_id
 
-    old_re = re.match(
-        r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<n>\d+))?\.json",
-        nwb.session_id,
-    )
-
-    if old_re is not None:
-        # If there are more than one "bonsai sessions" (the trainer clicked "Save" button in the
-        # GUI more than once) in a certain day,
-        # parse nwb_suffix from the file name (0, 1, 2, ...)
-        subject_id, session_date, nwb_suffix = old_re.groups()
-        nwb_suffix = int(nwb_suffix) if nwb_suffix is not None else 0
+    if 'behavior' in nwb.session_id:
+        splits = nwb.session_id.split('_')
+        subject_id = splits[1]  
+        session_date = splits[2]
+        nwb_suffix = splits[3].replace('-','')
     else:
-        # After https://github.com/AllenNeuralDynamics/dynamic-foraging-task/commit/
-        # 62d0e9e2bb9b47a8efe8ecb91da9653381a5f551,
-        # the suffix becomes the session start time. Therefore, I use HHMMSS as the nwb suffix,
-        # which still keeps the order as before.
-
-        # Typical situation for multiple bonsai sessions per day is that the
-        # RAs pressed more than once "Save" button but only started the session once.
-        # Therefore, I should generate nwb_suffix from the bonsai file name
-        # instead of session_start_time.
-        subject_id, session_date, session_json_time = re.match(
-            r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<time>.*))\.json",
+        old_re = re.match(
+            r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<n>\d+))?\.json",
             nwb.session_id,
-        ).groups()
-        nwb_suffix = int(session_json_time.replace("-", ""))
+        )
+    
+        if old_re is not None:
+            # If there are more than one "bonsai sessions" (the trainer clicked "Save" button in the
+            # GUI more than once) in a certain day,
+            # parse nwb_suffix from the file name (0, 1, 2, ...)
+            subject_id, session_date, nwb_suffix = old_re.groups()
+            nwb_suffix = int(nwb_suffix) if nwb_suffix is not None else 0
+        else:
+            # After https://github.com/AllenNeuralDynamics/dynamic-foraging-task/commit/
+            # 62d0e9e2bb9b47a8efe8ecb91da9653381a5f551,
+            # the suffix becomes the session start time. Therefore, I use HHMMSS as the nwb suffix,
+            # which still keeps the order as before.
+    
+            # Typical situation for multiple bonsai sessions per day is that the
+            # RAs pressed more than once "Save" button but only started the session once.
+            # Therefore, I should generate nwb_suffix from the bonsai file name
+            # instead of session_start_time.
+            subject_id, session_date, session_json_time = re.match(
+                r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<time>.*))\.json",
+                nwb.session_id,
+            ).groups()
+            nwb_suffix = int(session_json_time.replace("-", ""))
 
     # Ad-hoc bug fixes for some mistyped mouse ID
     if subject_id in ("689727"):
@@ -249,6 +257,11 @@ def create_single_df_session_inner(nwb):
 
 
 def create_df_session(nwb_filename):
+    '''
+        Creates a dataframe where each row is a session
+        nwb_filename can be either a single nwb file, a single filepath
+        or a list of nwb files, or a list of nwb filepaths
+    '''
     if (type(nwb_filename) is not str) and (hasattr(nwb_filename, "__iter__")):
         dfs = []
         for nwb_file in nwb_filename:
