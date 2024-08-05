@@ -6,8 +6,6 @@ Utility functions for processing dynamic foraging data.
     create_single_df_session
     create_df_trials
     create_events_df
-TODO
-    df_session, df_trials don't work with new sessions
 """
 
 import os
