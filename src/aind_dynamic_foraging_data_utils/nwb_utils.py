@@ -21,7 +21,6 @@ from hdmf_zarr import NWBZarrIO
 # Probably just add one new NWB to data?
 # add test: ensure that rewards in df_trials matches events
 # add test: ensure that licks in df_trials matches events
-# add function: add trial go cue to events table
 # add test: ensure go cue numbers match in events/df_trials
 
 ## TODO LATER
@@ -30,6 +29,7 @@ from hdmf_zarr import NWBZarrIO
 # add issue to document alignment tools
 # random ad-hoc fixes for specific sessions shouldn't really be covered here. They should be fixed in the NWB, right?
 # the df_session from stefano can be cleaned up
+
 
 def load_nwb_from_filename(filename):
     """
@@ -69,17 +69,17 @@ def create_single_df_session_inner(nwb):
     session_date_from_meta = session_start_time_from_meta.strftime("%Y-%m-%d")
     subject_id_from_meta = nwb.subject.subject_id
 
-    if 'behavior' in nwb.session_id:
-        splits = nwb.session_id.split('_')
-        subject_id = splits[1]  
+    if "behavior" in nwb.session_id:
+        splits = nwb.session_id.split("_")
+        subject_id = splits[1]
         session_date = splits[2]
-        nwb_suffix = splits[3].replace('-','')
+        nwb_suffix = splits[3].replace("-", "")
     else:
         old_re = re.match(
             r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<n>\d+))?\.json",
             nwb.session_id,
         )
-    
+
         if old_re is not None:
             # If there are more than one "bonsai sessions" (the trainer clicked "Save" button in the
             # GUI more than once) in a certain day,
@@ -91,7 +91,7 @@ def create_single_df_session_inner(nwb):
             # 62d0e9e2bb9b47a8efe8ecb91da9653381a5f551,
             # the suffix becomes the session start time. Therefore, I use HHMMSS as the nwb suffix,
             # which still keeps the order as before.
-    
+
             # Typical situation for multiple bonsai sessions per day is that the
             # RAs pressed more than once "Save" button but only started the session once.
             # Therefore, I should generate nwb_suffix from the bonsai file name
@@ -256,11 +256,11 @@ def create_single_df_session_inner(nwb):
 
 
 def create_df_session(nwb_filename):
-    '''
-        Creates a dataframe where each row is a session
-        nwb_filename can be either a single nwb file, a single filepath
-        or a list of nwb files, or a list of nwb filepaths
-    '''
+    """
+    Creates a dataframe where each row is a session
+    nwb_filename can be either a single nwb file, a single filepath
+    or a list of nwb files, or a list of nwb filepaths
+    """
     if (type(nwb_filename) is not str) and (hasattr(nwb_filename, "__iter__")):
         dfs = []
         for nwb_file in nwb_filename:
@@ -416,15 +416,13 @@ def create_events_df(nwb_filename):
         events.append(df)
 
     # Add keys from trials table
-    # I don't like hardcoding dynamic foraging specific things here. 
+    # I don't like hardcoding dynamic foraging specific things here.
     # I think these keys should be added to the stimulus field of the nwb
-    trial_events = [
-        'goCue_start_time'
-    ]
+    trial_events = ["goCue_start_time"]
     for e in trial_events:
         stamps = nwb.trials[:][e].values
-        labels = [e]*len(stamps)
-        df = pd.DataFrame({'timestamps':stamps,'event':labels})
+        labels = [e] * len(stamps)
+        df = pd.DataFrame({"timestamps": stamps, "event": labels})
         events.append(df)
 
     # Build dataframe by concatenating each event
