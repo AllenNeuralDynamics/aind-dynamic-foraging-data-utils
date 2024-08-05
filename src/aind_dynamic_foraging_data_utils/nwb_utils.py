@@ -441,68 +441,11 @@ def create_events_df(nwb_filename):
     return df
 
 
-def create_events_df(nwb_filename):
+def create_fib_df(nwb_filename, tidy=False):
     """
-    returns a tidy dataframe of the events in the nwb file
-    """
-
-    nwb = load_nwb_from_filename(nwb_filename)
-
-    # Build list of all event types in acqusition, ignore FIP events
-    event_types = set(nwb.acquisition.keys())
-    ignore_types = set(
-        [
-            "FIP_falling_time",
-            "FIP_rising_time",
-            "G_1",
-            "G_1_preprocessed",
-            "G_2",
-            "G_2_preprocessed",
-            "Iso_1",
-            "Iso_1_preprocessed",
-            "Iso_1",
-            "Iso_1_preprocessed",
-            "R_1",
-            "R_1_preprocessed",
-            "R_2",
-            "R_2_preprocessed",
-            "Iso_2",
-            "Iso_2_preprocessed",
-        ]
-    )
-    event_types -= ignore_types
-
-    # Iterate over event types and build a dataframe of each
-    events = []
-    for e in event_types:
-        # For each event, get timestamps, data, and label
-        stamps = nwb.acquisition[e].timestamps[:]
-        data = nwb.acquisition[e].data[:]
-        labels = [e] * len(data)
-        df = pd.DataFrame({"timestamps": stamps, "data": data, "event": labels})
-        events.append(df)
-
-    # Add keys from trials table
-    # I don't like hardcoding dynamic foraging specific things here.
-    # I think these keys should be added to the stimulus field of the nwb
-    trial_events = ["goCue_start_time"]
-    for e in trial_events:
-        stamps = nwb.trials[:][e].values
-        labels = [e] * len(stamps)
-        df = pd.DataFrame({"timestamps": stamps, "event": labels})
-        events.append(df)
-
-    # Build dataframe by concatenating each event
-    df = pd.concat(events)
-    df = df.sort_values(by="timestamps")
-    df = df.dropna(subset="timestamps").reset_index(drop=True)
-
-    return df
-
-
-def create_fib_df(nwb_filename):
-    """
-    returns a tidy dataframe of the events in the nwb file
+    returns a dataframe of the FIB data in the nwb file
+    if tidy, return a tidy dataframe
+    if not tidy, return pivoted by timestamp
     """
 
     nwb = load_nwb_from_filename(nwb_filename)
@@ -544,6 +487,8 @@ def create_fib_df(nwb_filename):
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
     # pivot table based on timestamps
-    df_pivoted = pd.pivot_table(df, index="timestamps", columns=["event"], values="data")
-
-    return df_pivoted
+    if not tidy:
+        df_pivoted = pd.pivot_table(df, index="timestamps", columns=["event"], values="data")
+        return df_pivoted
+    else:
+        return df
