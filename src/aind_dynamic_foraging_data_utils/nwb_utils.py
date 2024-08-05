@@ -6,6 +6,7 @@ Utility functions for processing dynamic foraging data.
     create_single_df_session
     create_df_trials
     create_events_df
+    create_fib_df
 """
 
 import os
