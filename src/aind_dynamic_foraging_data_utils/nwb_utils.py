@@ -1,6 +1,7 @@
 """
 Utility functions for processing dynamic foraging data.
     load_nwb_from_filename
+    unpack_metadata
     create_single_df_session_inner
     create_df_session
     create_single_df_session
@@ -41,6 +42,10 @@ def load_nwb_from_filename(filename):
 
 
 def unpack_metadata(nwb):
+    """
+    Unpacks metadata as a dictionary attribute, instead of a Dynamic
+    table nested inside a dictionary
+    """
     nwb.metadata = nwb.scratch["metadata"].to_dataframe().iloc[0].to_dict()
 
 
