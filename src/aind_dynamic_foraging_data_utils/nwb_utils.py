@@ -455,7 +455,8 @@ def create_fib_df(nwb_filename, tidy=False):
 
     nwb = load_nwb_from_filename(nwb_filename)
 
-    # Build list of all event types in acqusition, ignore FIP events
+    # Build list of all FIB events in NWB file
+    nwb_types = set(nwb.acquisition.keys())
     event_types = set(
         [
             "FIP_falling_time",
@@ -476,6 +477,12 @@ def create_fib_df(nwb_filename, tidy=False):
             "Iso_2_preprocessed",
         ]
     )
+    event_types = event_types.intersection(nwb_types)
+
+    # If no FIB data available
+    if len(event_types) == 0:
+        return None
+
     # Iterate over event types and build a dataframe of each
     events = []
     for e in event_types:
