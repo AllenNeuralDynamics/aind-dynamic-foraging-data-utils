@@ -23,7 +23,6 @@ from hdmf_zarr import NWBZarrIO
 # add test: ensure that licks in df_trials matches events
 # add function: add trial go cue to events table
 # add test: ensure go cue numbers match in events/df_trials
-# Update pyproject and requirements.txt, with hdmf_zarr. 
 
 ## TODO LATER
 # Add issue to test alignment tools
@@ -414,6 +413,18 @@ def create_events_df(nwb_filename):
         data = nwb.acquisition[e].data[:]
         labels = [e] * len(data)
         df = pd.DataFrame({"timestamps": stamps, "data": data, "event": labels})
+        events.append(df)
+
+    # Add keys from trials table
+    # I don't like hardcoding dynamic foraging specific things here. 
+    # I think these keys should be added to the stimulus field of the nwb
+    trial_events = [
+        'goCue_start_time'
+    ]
+    for e in trial_events:
+        stamps = nwb.trials[:][e].values
+        labels = [e]*len(stamps)
+        df = pd.DataFrame({'timestamps':stamps,'event':labels})
         events.append(df)
 
     # Build dataframe by concatenating each event
