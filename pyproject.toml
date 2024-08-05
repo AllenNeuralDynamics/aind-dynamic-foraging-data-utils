@@ -19,7 +19,8 @@ dynamic = ["version"]
 dependencies = [
     'pandas',
     'numpy',
-    'pynwb'
+    'pynwb',
+    'hdmf_zarr'
 ]
 
 [project.optional-dependencies]
