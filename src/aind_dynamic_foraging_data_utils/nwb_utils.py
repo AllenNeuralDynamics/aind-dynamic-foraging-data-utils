@@ -8,15 +8,6 @@ Utility functions for processing dynamic foraging data.
     create_events_df
 TODO
     df_session, df_trials don't work with new sessions
-    Probably just add one new NWB to data?
-    add test: ensure that rewards in df_trials matches events
-    add test: ensure that licks in df_trials matches events
-    add test: ensure go cue numbers match in events/df_trials
-    Add issue to test alignment tools
-    add issue to get more tools from mindscope utils
-    add issue to document alignment tools
-    random ad-hoc fixes for specific sessions shouldn't really be covered here.
-    the df_session from stefano can be cleaned up
 """
 
 import os
@@ -57,8 +48,12 @@ def create_single_df_session_inner(nwb):
     df_trials = nwb.trials.to_dataframe()
 
     # Reformat data
-    choice_history = df_trials.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
-    reward_history = np.vstack([df_trials.rewarded_historyL, df_trials.rewarded_historyR])
+    choice_history = df_trials.animal_response.map(
+        {0: 0, 1: 1, 2: np.nan}
+    ).values
+    reward_history = np.vstack(
+        [df_trials.rewarded_historyL, df_trials.rewarded_historyR]
+    )
 
     # -- Session-based table --
     # - Meta data -
@@ -119,21 +114,38 @@ def create_single_df_session_inner(nwb):
 
     # Parse meta info
     # TODO: when generating nwb, put meta info in nwb.scratch and get rid of the regular expression
-    extra_water, rig = re.search(
-        r"Give extra water.*:(\d*(?:\.\d+)?)? .*?(?:tower|box):(.*)?",
-        nwb.session_description,
-    ).groups()
-    weight_after_session = re.search(
-        r"Weight after.*:(\d*(?:\.\d+)?)?", nwb.subject.description
-    ).groups()[0]
+    # This could be significantly cleaned up based on new metadata format
+    # But im making it consistent for now
+    if "behavior" not in nwb.session_id:
+        extra_water, rig = re.search(
+            r"Give extra water.*:(\d*(?:\.\d+)?)? .*?(?:tower|box):(.*)?",
+            nwb.session_description,
+        ).groups()
+        weight_after_session = re.search(
+            r"Weight after.*:(\d*(?:\.\d+)?)?", nwb.subject.description
+        ).groups()[0]
 
-    extra_water = float(extra_water) if extra_water != "" else 0
-    weight_after_session = float(weight_after_session) if weight_after_session != "" else np.nan
-    weight_before_session = float(nwb.subject.weight) if nwb.subject.weight != "" else np.nan
+        extra_water = float(extra_water) if extra_water != "" else 0
+        weight_after_session = (
+            float(weight_after_session)
+            if weight_after_session != ""
+            else np.nan
+        )
+        weight_before_session = (
+            float(nwb.subject.weight) if nwb.subject.weight != "" else np.nan
+        )
+        user_name = nwb.experimenter[0]
+    else:
+        rig = nwb.scratch["metadata"].box[0]
+        user_name = nwb.experimenter
+        weight_after_session = nwb.scratch["metadata"].weight_after[0]
+        water_during_session = nwb.scratch["metadata"].water_in_session_total[0]
+        weight_before_session = weight_after_session - water_during_session
+        extra_water = nwb.scratch["metadata"].water_in_session_manual[0]
 
     dict_meta = {
         "rig": rig,
-        "user_name": nwb.experimenter[0],
+        "user_name": user_name,
         "experiment_description": nwb.experiment_description,
         "task": nwb.protocol,
         "session_start_time": session_start_time_from_meta,
@@ -218,7 +230,8 @@ def create_single_df_session_inner(nwb):
         )
         df_session["auto_train", "curriculum_schema_version"] = (
             np.nan
-            if df_trials.auto_train_curriculum_schema_version.mode()[0] == "none"
+            if df_trials.auto_train_curriculum_schema_version.mode()[0]
+            == "none"
             else df_trials.auto_train_curriculum_schema_version.mode()[0]
         )
         df_session["auto_train", "current_stage_actual"] = (
@@ -235,7 +248,12 @@ def create_single_df_session_inner(nwb):
         # Add a flag to indicate whether any of the auto train settings were changed
         # during the training
         df_session["auto_train", "if_consistent_within_session"] = (
-            len(df_trials.groupby([col for col in df_trials.columns if "auto_train" in col])) == 1
+            len(
+                df_trials.groupby(
+                    [col for col in df_trials.columns if "auto_train" in col]
+                )
+            )
+            == 1
         )
     else:
         for field in [
@@ -279,7 +297,9 @@ def create_single_df_session(nwb_filename):
     df_session.columns = df_session.columns.droplevel("type")
     df_session = df_session.reset_index()
     df_session["ses_idx"] = (
-        df_session["subject_id"].values + "_" + df_session["session_date"].values
+        df_session["subject_id"].values
+        + "_"
+        + df_session["session_date"].values
     )
     df_session = df_session.rename(columns={"variable": "session_num"})
     return df_session
@@ -301,10 +321,16 @@ def create_df_trials(nwb_filename):
     ]
 
     # TODO fails for new session
-    subject_id, session_date, session_json_time = re.match(
-        r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<time>.*))\.json",
-        nwb.session_id,
-    ).groups()
+    if "behavior" not in nwb.session_id:
+        subject_id, session_date, session_json_time = re.match(
+            r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<time>.*))\.json",
+            nwb.session_id,
+        ).groups()
+    else:
+        splits = nwb.session_id.split("_")
+        subject_id = splits[1]
+        session_date = splits[2]
+
     ses_idx = subject_id + "_" + session_date
 
     df_ses_trials = nwb.trials.to_dataframe().reset_index()
@@ -316,11 +342,14 @@ def create_df_trials(nwb_filename):
     for col in df_ses_trials.columns:
         if ("time" in col) and (col != "goCue_start_time"):
             df_ses_trials.loc[:, col] = (
-                df_ses_trials[col].values - df_ses_trials["goCue_start_time"].values
+                df_ses_trials[col].values
+                - df_ses_trials["goCue_start_time"].values
             )
     df_ses_trials["goCue_time_absolute"] = absolute_time
     df_ses_trials["goCue_start_time"] = 0.0
-    events_ses = {key: nwb.acquisition[key].timestamps[:] - t0 for key in key_from_acq}
+    events_ses = {
+        key: nwb.acquisition[key].timestamps[:] - t0 for key in key_from_acq
+    }
 
     for event in [
         "left_lick_time",
@@ -332,8 +361,14 @@ def create_df_trials(nwb_filename):
         df_ses_trials[event] = df_ses_trials.apply(
             lambda x: np.round(
                 event_times[
-                    (event_times > (x["goCue_start_time"] + x["goCue_time_absolute"]))
-                    & (event_times < (x["stop_time"] + x["goCue_time_absolute"]))
+                    (
+                        event_times
+                        > (x["goCue_start_time"] + x["goCue_time_absolute"])
+                    )
+                    & (
+                        event_times
+                        < (x["stop_time"] + x["goCue_time_absolute"])
+                    )
                 ]
                 - x["goCue_time_absolute"],
                 4,
@@ -354,7 +389,11 @@ def create_df_trials(nwb_filename):
         axis=1,
     )
     df_ses_trials["choice_time"] = df_ses_trials.apply(
-        lambda x: np.nanmin(np.concatenate([[np.nan], x["right_lick_time"], x["left_lick_time"]])),
+        lambda x: np.nanmin(
+            np.concatenate(
+                [[np.nan], x["right_lick_time"], x["left_lick_time"]]
+            )
+        ),
         axis=1,
     )
     df_ses_trials["reward"] = df_ses_trials.rewarded_historyR.astype(
