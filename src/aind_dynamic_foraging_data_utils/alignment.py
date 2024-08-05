@@ -1,5 +1,5 @@
 """
-    Tools for aligning continuous and discrete events 
+    Tools for aligning continuous and discrete events
     functions:
     get_time_array
     slice_inds_and_offsets

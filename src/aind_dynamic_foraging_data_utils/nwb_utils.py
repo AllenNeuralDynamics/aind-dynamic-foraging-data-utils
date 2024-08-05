@@ -6,6 +6,17 @@ Utility functions for processing dynamic foraging data.
     create_single_df_session
     create_df_trials
     create_events_df
+TODO
+    df_session, df_trials don't work with new sessions
+    Probably just add one new NWB to data?
+    add test: ensure that rewards in df_trials matches events
+    add test: ensure that licks in df_trials matches events
+    add test: ensure go cue numbers match in events/df_trials
+    Add issue to test alignment tools
+    add issue to get more tools from mindscope utils
+    add issue to document alignment tools
+    random ad-hoc fixes for specific sessions shouldn't really be covered here.
+    the df_session from stefano can be cleaned up
 """
 
 import os
@@ -15,20 +26,6 @@ import numpy as np
 import pandas as pd
 from pynwb import NWBHDF5IO
 from hdmf_zarr import NWBZarrIO
-
-## TODO THIS PR
-# df_session, df_trials don't work with new sessions
-# Probably just add one new NWB to data?
-# add test: ensure that rewards in df_trials matches events
-# add test: ensure that licks in df_trials matches events
-# add test: ensure go cue numbers match in events/df_trials
-
-## TODO LATER
-# Add issue to test alignment tools
-# add issue to get more tools from mindscope utils
-# add issue to document alignment tools
-# random ad-hoc fixes for specific sessions shouldn't really be covered here. They should be fixed in the NWB, right?
-# the df_session from stefano can be cleaned up
 
 
 def load_nwb_from_filename(filename):
