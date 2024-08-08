@@ -1,0 +1,7 @@
+{
+    "description": "Stop time of epoch, in seconds",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "4fab766b-fb39-45bd-9627-8ae10caa4501",
+    "zarr_dtype": "float64"
+}

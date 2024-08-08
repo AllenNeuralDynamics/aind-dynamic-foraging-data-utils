@@ -1,0 +1,7 @@
+{
+    "description": "The target brain areas",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "3bf57aaa-24ed-4f40-93a8-c1e0c4ec2b3a",
+    "zarr_dtype": "int"
+}

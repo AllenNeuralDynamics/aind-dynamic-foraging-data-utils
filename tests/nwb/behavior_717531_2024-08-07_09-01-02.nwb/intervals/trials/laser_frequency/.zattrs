@@ -1,0 +1,7 @@
+{
+    "description": "The laser waveform frequency",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "e404a27a-f88d-4ba5-8ee6-84eeaeb3f10a",
+    "zarr_dtype": "int"
+}

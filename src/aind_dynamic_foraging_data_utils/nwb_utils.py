@@ -65,6 +65,7 @@ def create_single_df_session_inner(nwb):
     session_date_from_meta = session_start_time_from_meta.strftime("%Y-%m-%d")
     subject_id_from_meta = nwb.subject.subject_id
 
+    # TODO, should reprocess old files, and remove this logic
     if "behavior" in nwb.session_id:
         splits = nwb.session_id.split("_")
         subject_id = splits[1]
@@ -120,6 +121,7 @@ def create_single_df_session_inner(nwb):
     # TODO: when generating nwb, put meta info in nwb.scratch and get rid of the regular expression
     # This could be significantly cleaned up based on new metadata format
     # But im making it consistent for now
+    # TODO, should reprocess old files, and remove this logic
     if "behavior" not in nwb.session_id:
         extra_water, rig = re.search(
             r"Give extra water.*:(\d*(?:\.\d+)?)? .*?(?:tower|box):(.*)?",
@@ -310,7 +312,7 @@ def create_df_trials(nwb_filename):
         "FIP_rising_time",
     ]
 
-    # TODO fails for new session
+    # TODO, should reprocess old files, and remove this logic
     if "behavior" not in nwb.session_id:
         subject_id, session_date, session_json_time = re.match(
             r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<time>.*))\.json",

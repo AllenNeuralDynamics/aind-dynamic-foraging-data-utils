@@ -1,0 +1,7 @@
+{
+    "description": "The go cue start time",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "b4561a98-1694-41bd-beca-9c3647740e5f",
+    "zarr_dtype": "float"
+}

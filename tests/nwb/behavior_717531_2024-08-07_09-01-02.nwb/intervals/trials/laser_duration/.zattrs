@@ -1,0 +1,7 @@
+{
+    "description": "The laser duration",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "c3f3b7b0-c016-4c72-bb1e-8bfe1d6768f8",
+    "zarr_dtype": "int"
+}

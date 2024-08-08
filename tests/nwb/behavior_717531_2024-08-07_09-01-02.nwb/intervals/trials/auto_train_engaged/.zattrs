@@ -1,0 +1,7 @@
+{
+    "description": "Whether the auto training is engaged",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "15ae49d7-76f9-4398-8cda-c36d76823e3c",
+    "zarr_dtype": "bool"
+}

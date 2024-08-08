@@ -1,0 +1,7 @@
+{
+    "description": "The right valve open time",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "8a393a14-94e4-467b-b332-b6d24c5167a1",
+    "zarr_dtype": "float"
+}

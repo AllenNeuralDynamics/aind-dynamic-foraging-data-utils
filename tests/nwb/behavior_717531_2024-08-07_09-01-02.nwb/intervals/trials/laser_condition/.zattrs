@@ -1,0 +1,7 @@
+{
+    "description": "The laser on is conditioned on LaserCondition",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "9ddcdbfa-a940-4047-b441-fa51f3124117",
+    "zarr_dtype": "int"
+}

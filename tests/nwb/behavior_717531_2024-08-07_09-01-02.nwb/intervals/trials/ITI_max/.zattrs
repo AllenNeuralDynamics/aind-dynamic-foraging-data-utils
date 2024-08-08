@@ -1,0 +1,7 @@
+{
+    "description": "The maxmum duration(s) allowed for each ITI",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "c3e08c30-89d6-416a-8875-137977a5ee0b",
+    "zarr_dtype": "float"
+}

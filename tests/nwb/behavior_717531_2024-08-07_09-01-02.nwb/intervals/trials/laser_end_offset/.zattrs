@@ -1,0 +1,7 @@
+{
+    "description": "Laser end is aligned to an event with an offset",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "4e2c85ef-b666-4e22-b895-615a71d9398e",
+    "zarr_dtype": "int"
+}
