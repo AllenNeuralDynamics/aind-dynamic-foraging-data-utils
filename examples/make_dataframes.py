@@ -1,3 +1,8 @@
+"""
+    This is an example script to extract dataframes
+    from an NWB file
+"""
+
 import glob
 from aind_dynamic_foraging_data_utils import nwb_utils
 
