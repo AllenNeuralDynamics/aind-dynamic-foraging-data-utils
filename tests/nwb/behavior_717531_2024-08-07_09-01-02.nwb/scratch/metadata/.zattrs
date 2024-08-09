@@ -1,0 +1,22 @@
+{
+    "colnames": [
+        "box",
+        "session_end_time",
+        "session_run_time_in_min",
+        "water_in_session_foraging",
+        "water_in_session_manual",
+        "water_in_session_total",
+        "water_after_session",
+        "water_day_total",
+        "base_weight",
+        "target_weight",
+        "target_weight_ratio",
+        "weight_after",
+        "foraging_efficiency",
+        "foraging_efficiency_with_actual_random_seed"
+    ],
+    "description": "Some important session-wise meta data",
+    "namespace": "hdmf-common",
+    "neurodata_type": "DynamicTable",
+    "object_id": "4da0175f-3a7d-470b-afff-ae6ceaae4627"
+}

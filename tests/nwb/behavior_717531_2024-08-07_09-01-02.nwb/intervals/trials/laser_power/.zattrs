@@ -1,0 +1,7 @@
+{
+    "description": "The laser power(mw)",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "116076b8-a51a-4fa4-a93f-5a189f0a717c",
+    "zarr_dtype": "int"
+}

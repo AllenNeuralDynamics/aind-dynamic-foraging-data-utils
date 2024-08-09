@@ -1,0 +1,7 @@
+{
+    "description": "Left reward size (uL)",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "826cd5b7-57b8-4156-967a-e712f84a2e42",
+    "zarr_dtype": "float"
+}

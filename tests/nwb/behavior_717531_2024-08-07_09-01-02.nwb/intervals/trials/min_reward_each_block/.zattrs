@@ -1,0 +1,7 @@
+{
+    "description": "The minimum reward allowed for each block",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "cb0f6c57-16e9-4127-a032-f603d93a0a3e",
+    "zarr_dtype": "float"
+}

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import glob
 
-from src.aind_dynamic_foraging_data_utils import aind_dynamic_foraging_data_utils
+from src.aind_dynamic_foraging_data_utils import alignment, nwb_utils
 
 
 class DynamicForagingTest(unittest.TestCase):
@@ -21,10 +21,10 @@ class DynamicForagingTest(unittest.TestCase):
         nwb_files = glob.glob("./tests/nwb/**.nwb")
         # create a dataframe for each nwb file
 
-        df = aind_dynamic_foraging_data_utils.create_df_session(nwb_files)
+        df = nwb_utils.create_df_session(nwb_files)
         assert len(df) == len(nwb_files)
 
-        df = aind_dynamic_foraging_data_utils.create_df_session(nwb_files[0])
+        df = nwb_utils.create_df_session(nwb_files[0])
         assert len(df) == 1
 
     def test_create_df_trials(self):
@@ -33,7 +33,7 @@ class DynamicForagingTest(unittest.TestCase):
         """
         nwb_files = glob.glob("./tests/nwb/**.nwb")
         # create a dataframe for one nwb file
-        df = aind_dynamic_foraging_data_utils.create_df_trials(nwb_files[0])
+        df = nwb_utils.create_df_trials(nwb_files[0])
         # check that the dataframe has correct session names
         session_name = "_".join(nwb_files[0].split("/")[-1].split("_")[:-1])
         assert df.ses_idx[0] == session_name
@@ -44,13 +44,13 @@ class DynamicForagingTest(unittest.TestCase):
         a sampling_rate argument
         """
         # this should give [-1, 1) with steps of 0.5, exclusive of the endpoint
-        t_array = aind_dynamic_foraging_data_utils.get_time_array(
+        t_array = alignment.get_time_array(
             t_start=-1, t_end=1, sampling_rate=2, include_endpoint=False
         )
         assert (t_array == np.array([-1.0, -0.5, 0.0, 0.5])).all()
 
         # this should give [-1, 1] with steps of 0.5, inclusive of the endpoint
-        t_array = aind_dynamic_foraging_data_utils.get_time_array(
+        t_array = alignment.get_time_array(
             t_start=-1, t_end=1, sampling_rate=2, include_endpoint=True
         )
         assert (t_array == np.array([-1.0, -0.5, 0.0, 0.5, 1.0])).all()
@@ -58,7 +58,7 @@ class DynamicForagingTest(unittest.TestCase):
         # this should give [-1, 0.75) with steps of 0.5.
         # becuase the desired range (1.75) is not evenly divisible by the
         # step size (0.5), the array should end before the desired endpoint
-        t_array = aind_dynamic_foraging_data_utils.get_time_array(
+        t_array = alignment.get_time_array(
             t_start=-1, t_end=0.75, sampling_rate=2, include_endpoint=False
         )
         assert (t_array == np.array([-1.0, -0.5, 0.0, 0.5])).all()
@@ -66,7 +66,7 @@ class DynamicForagingTest(unittest.TestCase):
         # this should give [-1, 0.75) with steps of 0.5.
         # becuase the desired range (1.75) is not evenly divisible by the
         # step size (0.5), the array should end before the desired endpoint
-        t_array = aind_dynamic_foraging_data_utils.get_time_array(
+        t_array = alignment.get_time_array(
             t_start=-1, t_end=0.75, sampling_rate=2, include_endpoint=True
         )
         assert (t_array == np.array([-1.0, -0.5, 0.0, 0.5])).all()
@@ -76,13 +76,13 @@ class DynamicForagingTest(unittest.TestCase):
         tests the `get_time_array` function while passing a step_size argument
         """
         # this should give [-1, 1) with steps of 0.5, exclusive of the endpoint
-        t_array = aind_dynamic_foraging_data_utils.get_time_array(
+        t_array = alignment.get_time_array(
             t_start=-1, t_end=1, step_size=0.5, include_endpoint=False
         )
         assert (t_array == np.array([-1.0, -0.5, 0.0, 0.5])).all()
 
         # this should give [-1, 1] with steps of 0.5, inclusive of the endpoint
-        t_array = aind_dynamic_foraging_data_utils.get_time_array(
+        t_array = alignment.get_time_array(
             t_start=-1, t_end=1, step_size=0.5, include_endpoint=True
         )
         assert (t_array == np.array([-1.0, -0.5, 0.0, 0.5, 1.0])).all()
@@ -91,7 +91,7 @@ class DynamicForagingTest(unittest.TestCase):
         # becuase the desired range (1.75) is not evenly
         # divisible by the step size (0.5), the array should
         # end before the desired endpoint
-        t_array = aind_dynamic_foraging_data_utils.get_time_array(
+        t_array = alignment.get_time_array(
             t_start=-1, t_end=0.75, step_size=0.5, include_endpoint=False
         )
         assert (t_array == np.array([-1.0, -0.5, 0.0, 0.5])).all()
@@ -100,7 +100,7 @@ class DynamicForagingTest(unittest.TestCase):
         # becuase the desired range (1.75) is not evenly
         # divisible by the step size (0.5),
         # the array should end before the desired endpoint
-        t_array = aind_dynamic_foraging_data_utils.get_time_array(
+        t_array = alignment.get_time_array(
             t_start=-1, t_end=0.75, step_size=0.5, include_endpoint=True
         )
         assert (t_array == np.array([-1.0, -0.5, 0.0, 0.5])).all()
@@ -119,7 +119,7 @@ class DynamicForagingTest(unittest.TestCase):
         df_copy = df.copy(deep=True)
 
         # Make an event triggered response
-        etr = aind_dynamic_foraging_data_utils.event_triggered_response(
+        etr = alignment.event_triggered_response(
             data=df,
             t="time",
             y="sinusoid",

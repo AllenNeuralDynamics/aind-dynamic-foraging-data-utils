@@ -1,0 +1,7 @@
+{
+    "comments": "no comments",
+    "description": "The time of photometry falling edge (from Harp)",
+    "namespace": "core",
+    "neurodata_type": "TimeSeries",
+    "object_id": "cf30cf66-1df3-4a4f-bcef-8bd264d8245a"
+}

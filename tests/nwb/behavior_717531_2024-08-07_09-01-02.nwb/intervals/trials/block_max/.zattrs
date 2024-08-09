@@ -1,0 +1,7 @@
+{
+    "description": "The maxmum length allowed for each block",
+    "namespace": "hdmf-common",
+    "neurodata_type": "VectorData",
+    "object_id": "b2213d30-6908-4c52-8794-0cac285076f3",
+    "zarr_dtype": "float"
+}
