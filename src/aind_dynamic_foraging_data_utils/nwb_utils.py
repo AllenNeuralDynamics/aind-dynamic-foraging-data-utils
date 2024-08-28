@@ -389,9 +389,11 @@ def create_df_trials(nwb_filename):
     return df_ses_trials
 
 
-def create_events_df(nwb_filename):
+def create_events_df(nwb_filename,adjust_time=True):
     """
     returns a tidy dataframe of the events in the nwb file
+
+    adjust_time (bool), set time of first goCue to t=0
     """
 
     nwb = load_nwb_from_filename(nwb_filename)
@@ -420,6 +422,9 @@ def create_events_df(nwb_filename):
     )
     event_types -= ignore_types
 
+    # Determine time 0
+    t0 = nwb.trials.start_time[0]
+
     # Iterate over event types and build a dataframe of each
     events = []
     for e in event_types:
@@ -427,6 +432,8 @@ def create_events_df(nwb_filename):
         stamps = nwb.acquisition[e].timestamps[:]
         data = nwb.acquisition[e].data[:]
         labels = [e] * len(data)
+        if adjust_time:
+            stamps = stamps - t0
         df = pd.DataFrame({"timestamps": stamps, "data": data, "event": labels})
         events.append(df)
 
@@ -437,6 +444,8 @@ def create_events_df(nwb_filename):
     for e in trial_events:
         stamps = nwb.trials[:][e].values
         labels = [e] * len(stamps)
+        if adjust_time:
+            stamps = stamps - t0
         df = pd.DataFrame({"timestamps": stamps, "event": labels})
         events.append(df)
 
@@ -448,11 +457,13 @@ def create_events_df(nwb_filename):
     return df
 
 
-def create_fib_df(nwb_filename, tidy=False):
+def create_fib_df(nwb_filename, tidy=False, adjust_time=True):
     """
     returns a dataframe of the FIB data in the nwb file
     if tidy, return a tidy dataframe
     if not tidy, return pivoted by timestamp
+
+    adjust_time (bool), set time of first goCue to t=0
     """
 
     nwb = load_nwb_from_filename(nwb_filename)
@@ -485,6 +496,9 @@ def create_fib_df(nwb_filename, tidy=False):
     if len(event_types) == 0:
         return None
 
+    # Determine time 0
+    t0 = nwb.trials.start_time[0]
+
     # Iterate over event types and build a dataframe of each
     events = []
     for e in event_types:
@@ -492,6 +506,8 @@ def create_fib_df(nwb_filename, tidy=False):
         stamps = nwb.acquisition[e].timestamps[:]
         data = nwb.acquisition[e].data[:]
         labels = [e] * len(data)
+        if adjust_time:
+            stamps = stamps - t0
         df = pd.DataFrame({"timestamps": stamps, "data": data, "event": labels})
         events.append(df)
 
