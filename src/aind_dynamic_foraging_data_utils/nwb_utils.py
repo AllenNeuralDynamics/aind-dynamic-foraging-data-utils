@@ -473,6 +473,20 @@ def create_events_df(nwb_filename,adjust_time=True):
     df = df.sort_values(by="timestamps")
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
+    # Add trial index for each event
+    trial_starts = nwb.trials.start_time[:] - nwb.trials.start_time[0]
+    last_stop = nwb.trials.stop_time[-1] - nwb.trials.start_time[0]
+    trial_index = []
+    for index, e in df.iterrows():
+        starts  = np.where(e.timestamps > trial_starts)[0]
+        if len(starts) == 0:
+            trial_index.append(-1)
+        elif e.timestamps > last_stop:
+            trial_index.append(len(trial_starts))
+        else:
+            trial_index.append(starts[-1])
+    df['trial'] = trial_index
+            
     return df
 
 
