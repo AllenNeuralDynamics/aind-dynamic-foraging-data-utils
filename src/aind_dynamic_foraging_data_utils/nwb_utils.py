@@ -502,7 +502,7 @@ def create_fib_df(nwb_filename, tidy=False):
 
     # pivot table based on timestamps
     if not tidy:
-        df_pivoted = pd.pivot_table(df, index="timestamps", columns=["event"], values="data")
+        df_pivoted = pd.pivot(df, index="timestamps", columns=["event"], values="data")
         return df_pivoted
     else:
         return df
