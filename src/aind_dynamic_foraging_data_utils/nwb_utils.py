@@ -331,18 +331,25 @@ def create_df_trials(nwb_filename):
 
     # Adjust all times relative to start of the first trial
     t0 = df_ses_trials.start_time[0]
-    skip_cols = ['right_valve_open_time','left_valve_open_time']
+    skip_cols = ["right_valve_open_time", "left_valve_open_time"]
     for col in df_ses_trials.columns:
-        if ('time' in col) and (col not in skip_cols):
-            df_ses_trials[col+'_absolute'] = df_ses_trials[col] - t0
+        if ("time" in col) and (col not in skip_cols):
+            df_ses_trials[col + "_absolute"] = df_ses_trials[col] - t0
 
     # Adjust for gaps in trial start/stop, and use the last stop time
-    last_stop = df_ses_trials.iloc[-1]['stop_time_absolute']
-    df_ses_trials['stop_time_absolute'] = df_ses_trials['start_time_absolute'].shift(-1,fill_value = last_stop )
+    last_stop = df_ses_trials.iloc[-1]["stop_time_absolute"]
+    df_ses_trials["stop_time_absolute"] = df_ses_trials["start_time_absolute"].shift(
+        -1, fill_value=last_stop
+    )
 
     # Adjust times relative to go cue
     for col in df_ses_trials.columns:
-        if ("time" in col) and ('time_absolute' not in col) and (col != "goCue_start_time") and (col not in skip_cols):
+        if (
+            ("time" in col)
+            and ("time_absolute" not in col)
+            and (col != "goCue_start_time")
+            and (col not in skip_cols)
+        ):
             df_ses_trials.loc[:, col] = (
                 df_ses_trials[col].values - df_ses_trials["goCue_start_time"].values
             )
@@ -382,14 +389,18 @@ def create_df_trials(nwb_filename):
         ),
         axis=1,
     )
-    df_ses_trials['reward_time_absolute'] = df_ses_trials['reward_time'] + df_ses_trials['goCue_start_time_absolute']
+    df_ses_trials["reward_time_absolute"] = (
+        df_ses_trials["reward_time"] + df_ses_trials["goCue_start_time_absolute"]
+    )
 
     # Compute time of choice for each trials
     df_ses_trials["choice_time"] = df_ses_trials.apply(
         lambda x: np.nanmin(np.concatenate([[np.nan], x["right_lick_time"], x["left_lick_time"]])),
         axis=1,
     )
-    df_ses_trials['choice_time_absolute'] = df_ses_trials['choice_time'] + df_ses_trials['goCue_start_time_absolute']
+    df_ses_trials["choice_time_absolute"] = (
+        df_ses_trials["choice_time"] + df_ses_trials["goCue_start_time_absolute"]
+    )
 
     # Compute boolean of whether animal was rewarded
     df_ses_trials["reward"] = df_ses_trials.rewarded_historyR.astype(
@@ -408,7 +419,7 @@ def create_df_trials(nwb_filename):
     return df_ses_trials
 
 
-def create_events_df(nwb_filename,adjust_time=True):
+def create_events_df(nwb_filename, adjust_time=True):
     """
     returns a tidy dataframe of the events in the nwb file
 
@@ -478,15 +489,15 @@ def create_events_df(nwb_filename,adjust_time=True):
     last_stop = nwb.trials.stop_time[-1] - nwb.trials.start_time[0]
     trial_index = []
     for index, e in df.iterrows():
-        starts  = np.where(e.timestamps > trial_starts)[0]
+        starts = np.where(e.timestamps > trial_starts)[0]
         if len(starts) == 0:
             trial_index.append(-1)
         elif e.timestamps > last_stop:
             trial_index.append(len(trial_starts))
         else:
             trial_index.append(starts[-1])
-    df['trial'] = trial_index
-            
+    df["trial"] = trial_index
+
     return df
 
 
