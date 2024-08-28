@@ -329,15 +329,24 @@ def create_df_trials(nwb_filename):
     df_ses_trials = df_ses_trials.rename(columns={"id": "trial"})
     df_ses_trials["ses_idx"] = ses_idx
 
+    # Adjust all times relative to start of the first trial
     t0 = df_ses_trials.start_time[0]
-    absolute_time = df_ses_trials["goCue_start_time"] - t0
     for col in df_ses_trials.columns:
-        if ("time" in col) and (col != "goCue_start_time"):
+        if ('time' in col):
+            df_ses_trials[col+'_absolute'] = df_ses_trials[col] - t0
+
+    # Adjust for gaps in trial start/stop, and use the last stop time
+    last_stop = df_ses_trials.iloc[-1]['stop_time_absolute'] - t0
+    df_ses_trials['stop_time_absolute'] = df_ses_trials['start_time_absolute'].shift(-1,fill_value = last_stop )
+
+    # Adjust times relative to go cue
+    for col in df_ses_trials.columns:
+        if ("time" in col) and ('time_absolute' not in col) and (col != "goCue_start_time"):
             df_ses_trials.loc[:, col] = (
                 df_ses_trials[col].values - df_ses_trials["goCue_start_time"].values
             )
-    df_ses_trials["goCue_time_absolute"] = absolute_time
     df_ses_trials["goCue_start_time"] = 0.0
+
     events_ses = {key: nwb.acquisition[key].timestamps[:] - t0 for key in key_from_acq}
 
     for event in [
@@ -350,10 +359,10 @@ def create_df_trials(nwb_filename):
         df_ses_trials[event] = df_ses_trials.apply(
             lambda x: np.round(
                 event_times[
-                    (event_times > (x["goCue_start_time"] + x["goCue_time_absolute"]))
-                    & (event_times < (x["stop_time"] + x["goCue_time_absolute"]))
+                    (event_times > (x["goCue_start_time"] + x["goCue_start_time_absolute"]))
+                    & (event_times < (x["stop_time"] + x["goCue_start_time_absolute"]))
                 ]
-                - x["goCue_time_absolute"],
+                - x["goCue_start_time_absolute"],
                 4,
             ),
             axis=1,
