@@ -187,7 +187,7 @@ def index_of_nearest_value(data_timestamps, event_timestamps):
     return event_indices
 
 
-def event_triggered_response(
+def event_triggered_response(  # noqa C901
     data,
     t,
     y,
