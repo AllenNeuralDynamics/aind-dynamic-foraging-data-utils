@@ -329,17 +329,34 @@ def create_df_trials(nwb_filename):
     df_ses_trials = df_ses_trials.rename(columns={"id": "trial"})
     df_ses_trials["ses_idx"] = ses_idx
 
+    # Adjust all times relative to start of the first trial
     t0 = df_ses_trials.start_time[0]
-    absolute_time = df_ses_trials["goCue_start_time"] - t0
+    skip_cols = ["right_valve_open_time", "left_valve_open_time"]
     for col in df_ses_trials.columns:
-        if ("time" in col) and (col != "goCue_start_time"):
+        if ("time" in col) and (col not in skip_cols):
+            df_ses_trials[col + "_absolute"] = df_ses_trials[col] - t0
+
+    # Adjust for gaps in trial start/stop, and use the last stop time
+    last_stop = df_ses_trials.iloc[-1]["stop_time_absolute"]
+    df_ses_trials["stop_time_absolute"] = df_ses_trials["start_time_absolute"].shift(
+        -1, fill_value=last_stop
+    )
+
+    # Adjust times relative to go cue
+    for col in df_ses_trials.columns:
+        if (
+            ("time" in col)
+            and ("time_absolute" not in col)
+            and (col != "goCue_start_time")
+            and (col not in skip_cols)
+        ):
             df_ses_trials.loc[:, col] = (
                 df_ses_trials[col].values - df_ses_trials["goCue_start_time"].values
             )
-    df_ses_trials["goCue_time_absolute"] = absolute_time
     df_ses_trials["goCue_start_time"] = 0.0
-    events_ses = {key: nwb.acquisition[key].timestamps[:] - t0 for key in key_from_acq}
 
+    # Adjust event times relative to trial
+    events_ses = {key: nwb.acquisition[key].timestamps[:] - t0 for key in key_from_acq}
     for event in [
         "left_lick_time",
         "right_lick_time",
@@ -350,15 +367,16 @@ def create_df_trials(nwb_filename):
         df_ses_trials[event] = df_ses_trials.apply(
             lambda x: np.round(
                 event_times[
-                    (event_times > (x["goCue_start_time"] + x["goCue_time_absolute"]))
-                    & (event_times < (x["stop_time"] + x["goCue_time_absolute"]))
+                    (event_times > (x["goCue_start_time"] + x["goCue_start_time_absolute"]))
+                    & (event_times < (x["stop_time"] + x["goCue_start_time_absolute"]))
                 ]
-                - x["goCue_time_absolute"],
+                - x["goCue_start_time_absolute"],
                 4,
             ),
             axis=1,
         )
 
+    # Compute time of reward for each trial
     df_ses_trials["reward_time"] = df_ses_trials.apply(
         lambda x: np.nanmin(
             np.concatenate(
@@ -371,13 +389,25 @@ def create_df_trials(nwb_filename):
         ),
         axis=1,
     )
+    df_ses_trials["reward_time_absolute"] = (
+        df_ses_trials["reward_time"] + df_ses_trials["goCue_start_time_absolute"]
+    )
+
+    # Compute time of choice for each trials
     df_ses_trials["choice_time"] = df_ses_trials.apply(
         lambda x: np.nanmin(np.concatenate([[np.nan], x["right_lick_time"], x["left_lick_time"]])),
         axis=1,
     )
+    df_ses_trials["choice_time_absolute"] = (
+        df_ses_trials["choice_time"] + df_ses_trials["goCue_start_time_absolute"]
+    )
+
+    # Compute boolean of whether animal was rewarded
     df_ses_trials["reward"] = df_ses_trials.rewarded_historyR.astype(
         int
     ) | df_ses_trials.rewarded_historyL.astype(int)
+
+    # Drop columns
     df_ses_trials = df_ses_trials.drop(
         columns=[
             "left_lick_time",
@@ -389,9 +419,11 @@ def create_df_trials(nwb_filename):
     return df_ses_trials
 
 
-def create_events_df(nwb_filename):
+def create_events_df(nwb_filename, adjust_time=True):
     """
     returns a tidy dataframe of the events in the nwb file
+
+    adjust_time (bool), set time of first goCue to t=0
     """
 
     nwb = load_nwb_from_filename(nwb_filename)
@@ -420,6 +452,9 @@ def create_events_df(nwb_filename):
     )
     event_types -= ignore_types
 
+    # Determine time 0
+    t0 = nwb.trials.start_time[0]
+
     # Iterate over event types and build a dataframe of each
     events = []
     for e in event_types:
@@ -427,6 +462,8 @@ def create_events_df(nwb_filename):
         stamps = nwb.acquisition[e].timestamps[:]
         data = nwb.acquisition[e].data[:]
         labels = [e] * len(data)
+        if adjust_time:
+            stamps = stamps - t0
         df = pd.DataFrame({"timestamps": stamps, "data": data, "event": labels})
         events.append(df)
 
@@ -437,6 +474,8 @@ def create_events_df(nwb_filename):
     for e in trial_events:
         stamps = nwb.trials[:][e].values
         labels = [e] * len(stamps)
+        if adjust_time:
+            stamps = stamps - t0
         df = pd.DataFrame({"timestamps": stamps, "event": labels})
         events.append(df)
 
@@ -445,14 +484,30 @@ def create_events_df(nwb_filename):
     df = df.sort_values(by="timestamps")
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
+    # Add trial index for each event
+    trial_starts = nwb.trials.start_time[:] - nwb.trials.start_time[0]
+    last_stop = nwb.trials.stop_time[-1] - nwb.trials.start_time[0]
+    trial_index = []
+    for index, e in df.iterrows():
+        starts = np.where(e.timestamps > trial_starts)[0]
+        if len(starts) == 0:
+            trial_index.append(-1)
+        elif e.timestamps > last_stop:
+            trial_index.append(len(trial_starts))
+        else:
+            trial_index.append(starts[-1])
+    df["trial"] = trial_index
+
     return df
 
 
-def create_fib_df(nwb_filename, tidy=False):
+def create_fib_df(nwb_filename, tidy=False, adjust_time=True):
     """
     returns a dataframe of the FIB data in the nwb file
     if tidy, return a tidy dataframe
     if not tidy, return pivoted by timestamp
+
+    adjust_time (bool), set time of first goCue to t=0
     """
 
     nwb = load_nwb_from_filename(nwb_filename)
@@ -485,6 +540,9 @@ def create_fib_df(nwb_filename, tidy=False):
     if len(event_types) == 0:
         return None
 
+    # Determine time 0
+    t0 = nwb.trials.start_time[0]
+
     # Iterate over event types and build a dataframe of each
     events = []
     for e in event_types:
@@ -492,6 +550,8 @@ def create_fib_df(nwb_filename, tidy=False):
         stamps = nwb.acquisition[e].timestamps[:]
         data = nwb.acquisition[e].data[:]
         labels = [e] * len(data)
+        if adjust_time:
+            stamps = stamps - t0
         df = pd.DataFrame({"timestamps": stamps, "data": data, "event": labels})
         events.append(df)
 
