@@ -458,9 +458,9 @@ def event_triggered_response(
         # drop the "variable" column, rename the "value" column
         tidy_etr = tidy_etr.drop(columns=["variable"]).rename(columns={"value": y})
         # return the tidy event triggered responses
-        if censor:
-            tidy_etr = censor_event_triggered_response(tidy_etr, t_start, t_end, event_times)
-        return tidy_etr
+    if censor:
+        tidy_etr = censor_event_triggered_response(tidy_etr, t_start, t_end, event_times)
+    return tidy_etr
 
 
 def censor_event_triggered_response(etr, t_start, t_end, event_times):
