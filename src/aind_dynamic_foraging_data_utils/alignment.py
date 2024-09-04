@@ -187,7 +187,7 @@ def index_of_nearest_value(data_timestamps, event_timestamps):
     return event_indices
 
 
-def event_triggered_response(
+def event_triggered_response(  # noqa C901
     data,
     t,
     y,
@@ -200,6 +200,7 @@ def event_triggered_response(
     include_endpoint=True,
     output_format="tidy",
     interpolate=True,
+    censor=True,
 ):  # NOQA E501
     """
     Slices a timeseries relative to a given set of event times
@@ -272,6 +273,9 @@ def event_triggered_response(
     interpolate : Boolean
         if True (default), interpolates each response onto a common timebase
         if False, shifts each response to align indices to a common timebase
+    censor: Boolean
+        if True (default), censor observations that take place after the next event time
+        if False, do not censor
 
     Returns:
     --------
@@ -344,6 +348,8 @@ def event_triggered_response(
 
     # ensure that t_end is greater than t_start
     assert t_end > t_start, "must define t_end to be greater than t_start"
+
+    assert (not censor) or (output_format == "tidy"), "cannot censor data in wide output"
 
     if output_sampling_rate is None:
         # if sampling rate is None,
@@ -452,4 +458,35 @@ def event_triggered_response(
         # drop the "variable" column, rename the "value" column
         tidy_etr = tidy_etr.drop(columns=["variable"]).rename(columns={"value": y})
         # return the tidy event triggered responses
-        return tidy_etr
+    if censor:
+        tidy_etr = censor_event_triggered_response(tidy_etr, y, t_start, t_end, event_times)
+    return tidy_etr
+
+
+def censor_event_triggered_response(etr, y, t_start, t_end, event_times):
+    """
+    censors the event triggered response by the immediately preceeding or
+    subsequent event times if that event time is within the (t_start, t_end)
+    time window
+
+    censored timepoints are replaced with NaN, so all data points are still present
+    """
+
+    # Compute when we should censor
+    diff = np.diff(event_times)
+    diff_backward = np.concatenate([[np.inf], diff])
+    diff_forward = np.concatenate([diff, [np.inf]])
+    backward_time = [-np.min([np.abs(t_end), x]) for x in diff_backward]
+    forward_time = [np.min([t_end, x]) for x in diff_forward]
+
+    # double check we have all events
+    assert len(event_times) == len(etr["event_number"].unique()), "event times missing"
+
+    # Censor trials
+    for index, time in enumerate(event_times):
+        vec = (etr["event_number"] == index) & (etr["time"] < backward_time[index])
+        etr.loc[vec, y] = np.nan
+        vec = (etr["event_number"] == index) & (etr["time"] > forward_time[index])
+        etr.loc[vec, y] = np.nan
+
+    return etr
