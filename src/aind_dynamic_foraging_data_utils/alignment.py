@@ -459,11 +459,11 @@ def event_triggered_response(  # noqa C901
         tidy_etr = tidy_etr.drop(columns=["variable"]).rename(columns={"value": y})
         # return the tidy event triggered responses
     if censor:
-        tidy_etr = censor_event_triggered_response(tidy_etr, y,t_start, t_end, event_times)
+        tidy_etr = censor_event_triggered_response(tidy_etr, y, t_start, t_end, event_times)
     return tidy_etr
 
 
-def censor_event_triggered_response(etr, y,t_start, t_end, event_times):
+def censor_event_triggered_response(etr, y, t_start, t_end, event_times):
     """
     censors the event triggered response by the immediately preceeding or
     subsequent event times if that event time is within the (t_start, t_end)
