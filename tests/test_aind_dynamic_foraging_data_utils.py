@@ -140,33 +140,33 @@ class DynamicForagingTest(unittest.TestCase):
         pd.testing.assert_frame_equal(df, df_copy)
 
     def test_event_triggered_response_censor(self):
-        '''
+        """
         tests the censoring property of the event_triggered_response function
-        '''
+        """
         # make a sample test set
         t = np.arange(0, 10, 0.01)
-        y = np.array([10]*len(t))
-        event_times=[2,3,4,5,6,7,8]
+        y = np.array([10] * len(t))
+        event_times = [2, 3, 4, 5, 6, 7, 8]
         for e in event_times:
-            y[(t>e)&(t<(e+.25))]=1        
+            y[(t > e) & (t < (e + 0.25))] = 1
 
         df = pd.DataFrame({"time": t, "y": y})
 
         # make etr
         etr_censored = alignment.event_triggered_response(
             data=df,
-            t='time',
-            y='y',
+            t="time",
+            y="y",
             event_times=event_times,
             t_before=2,
             t_after=2,
             output_sampling_rate=100,
-            censor=True
+            censor=True,
         )
 
         # assert properties of etr
-        assert np.isclose(etr_censored.query('time > 1')['y'].mean(),10,rtol=0.01)
-        assert np.isclose(etr_censored.query('time < -1')['y'].mean(),10,rtol=0.01)
+        assert np.isclose(etr_censored.query("time > 1")["y"].mean(), 10, rtol=0.01)
+        assert np.isclose(etr_censored.query("time < -1")["y"].mean(), 10, rtol=0.01)
 
 
 if __name__ == "__main__":
