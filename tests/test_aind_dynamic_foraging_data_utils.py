@@ -168,6 +168,24 @@ class DynamicForagingTest(unittest.TestCase):
         assert np.isclose(etr_censored.query("time > 1")["y"].mean(), 10, rtol=0.01)
         assert np.isclose(etr_censored.query("time < -1")["y"].mean(), 10, rtol=0.01)
 
+        # Test with arbitrary list of censor times
+        censor_times = [2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8]
+        etr_censored = alignment.event_triggered_response(
+            data=df,
+            t="time",
+            y="y",
+            event_times=event_times,
+            t_before=2,
+            t_after=2,
+            output_sampling_rate=100,
+            censor=True,
+            censor_times=censor_times
+        )
+
+        # assert properties of etr
+        assert np.isclose(etr_censored.query("time > 1")["y"].mean(), 10, rtol=0.01)
+        assert np.isclose(etr_censored.query("time < 0")["y"].mean(), 10, rtol=0.01)
+
 
 if __name__ == "__main__":
     unittest.main()
