@@ -201,6 +201,7 @@ def event_triggered_response(  # noqa C901
     output_format="tidy",
     interpolate=True,
     censor=True,
+    censor_times=None,
 ):  # NOQA E501
     """
     Slices a timeseries relative to a given set of event times
@@ -276,6 +277,9 @@ def event_triggered_response(  # noqa C901
     censor: Boolean
         if True (default), censor observations that take place after the next event time
         if False, do not censor
+    censor_times: list or array or None
+        if None, and censor is True, then use event_times as the censor times
+        if times are provided, then these are the times at which ETR is censored
 
     Returns:
     --------
@@ -350,6 +354,9 @@ def event_triggered_response(  # noqa C901
     assert t_end > t_start, "must define t_end to be greater than t_start"
 
     assert (not censor) or (output_format == "tidy"), "cannot censor data in wide output"
+
+    if censor:
+        event_times = np.sort(event_times)
 
     if output_sampling_rate is None:
         # if sampling rate is None,
@@ -459,34 +466,72 @@ def event_triggered_response(  # noqa C901
         tidy_etr = tidy_etr.drop(columns=["variable"]).rename(columns={"value": y})
         # return the tidy event triggered responses
     if censor:
-        tidy_etr = censor_event_triggered_response(tidy_etr, y, t_start, t_end, event_times)
+        tidy_etr = censor_event_triggered_response(
+            tidy_etr, y, t_start, t_end, event_times, censor_times
+        )
     return tidy_etr
 
 
-def censor_event_triggered_response(etr, y, t_start, t_end, event_times):
+def censor_event_triggered_response(etr, y, t_start, t_end, event_times, censor_times=None):
     """
     censors the event triggered response by the immediately preceeding or
     subsequent event times if that event time is within the (t_start, t_end)
     time window
 
     censored timepoints are replaced with NaN, so all data points are still present
+
+    etr: dataframe, event triggered response
+    y: column of the response variable to censor
+    t_start: start of event triggered response window
+    t_end: end of event triggered response window
+    censor: Boolean
+        if True, censor observations that take place after the next event time
+        if False, do not censor
+    censor_times: list or array or None
+        if None, and censor is True, then use event_times as the censor times
+        if times are provided, then these are the times at which ETR is censored
     """
 
-    # Compute when we should censor
-    diff = np.diff(event_times)
-    diff_backward = np.concatenate([[np.inf], diff])
-    diff_forward = np.concatenate([diff, [np.inf]])
-    backward_time = [-np.min([np.abs(t_end), x]) for x in diff_backward]
-    forward_time = [np.min([t_end, x]) for x in diff_forward]
+    if censor_times is None:
+        # Compute when we should censor
+        diff = np.diff(event_times)
+        diff_backward = np.concatenate([[np.inf], diff])
+        diff_forward = np.concatenate([diff, [np.inf]])
+        backward_time = [-np.min([np.abs(t_start), x]) for x in diff_backward]
+        forward_time = [np.min([t_end, x]) for x in diff_forward]
 
-    # double check we have all events
-    assert len(event_times) == len(etr["event_number"].unique()), "event times missing"
+        # double check we have all events
+        assert len(event_times) == len(etr["event_number"].unique()), "event times missing"
 
-    # Censor trials
-    for index, time in enumerate(event_times):
-        vec = (etr["event_number"] == index) & (etr["time"] < backward_time[index])
-        etr.loc[vec, y] = np.nan
-        vec = (etr["event_number"] == index) & (etr["time"] > forward_time[index])
-        etr.loc[vec, y] = np.nan
+        # Censor trials
+        for index, time in enumerate(event_times):
+            vec = (etr["event_number"] == index) & (etr["time"] < backward_time[index])
+            etr.loc[vec, y] = np.nan
+            vec = (etr["event_number"] == index) & (etr["time"] > forward_time[index])
+            etr.loc[vec, y] = np.nan
 
-    return etr
+        return etr
+    else:
+        censor_times = np.sort(censor_times)
+        backward_time = []
+        forward_time = []
+        for e in event_times:
+            before = censor_times[censor_times < e]
+            if len(before) == 0:
+                backward_time.append(t_start)
+            else:
+                backward_time.append(np.max([t_start, before[-1] - e]))
+            after = censor_times[censor_times > e]
+            if len(after) == 0:
+                forward_time.append(t_end)
+            else:
+                forward_time.append(np.min([t_end, after[0] - e]))
+
+        # Censor trials
+        for index, time in enumerate(event_times):
+            vec = (etr["event_number"] == index) & (etr["time"] < backward_time[index])
+            etr.loc[vec, y] = np.nan
+            vec = (etr["event_number"] == index) & (etr["time"] > forward_time[index])
+            etr.loc[vec, y] = np.nan
+
+        return etr
