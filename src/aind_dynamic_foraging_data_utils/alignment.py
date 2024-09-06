@@ -332,7 +332,7 @@ def event_triggered_response(  # noqa C901
     ), "must pass either t_start or t_before"  # noqa: E501
     assert (
         t_after is not None or t_end is not None
-    ), "must pass either t_start or t_before"  # noqa: E501
+    ), "must pass either t_end or t_after"  # noqa: E501
 
     assert (
         t_before is None or t_start is None
