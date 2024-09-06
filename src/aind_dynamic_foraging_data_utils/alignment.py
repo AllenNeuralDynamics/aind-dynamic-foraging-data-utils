@@ -277,6 +277,9 @@ def event_triggered_response(  # noqa C901
     censor: Boolean
         if True (default), censor observations that take place after the next event time
         if False, do not censor
+    censor_times: list or array or None
+        if None, and censor is True, then use event_times as the censor times
+        if times are provided, then these are the times at which ETR is censored
 
     Returns:
     --------
@@ -476,6 +479,17 @@ def censor_event_triggered_response(etr, y, t_start, t_end, event_times, censor_
     time window
 
     censored timepoints are replaced with NaN, so all data points are still present
+
+    etr: dataframe, event triggered response
+    y: column of the response variable to censor
+    t_start: start of event triggered response window
+    t_end: end of event triggered response window
+    censor: Boolean
+        if True, censor observations that take place after the next event time
+        if False, do not censor
+    censor_times: list or array or None
+        if None, and censor is True, then use event_times as the censor times
+        if times are provided, then these are the times at which ETR is censored
     """
 
     if censor_times is None:
