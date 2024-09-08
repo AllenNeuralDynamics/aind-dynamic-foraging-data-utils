@@ -197,7 +197,6 @@ class DynamicForagingTest(unittest.TestCase):
         # column called 'sinusoid' defined as sin(2*pi*t)
         # The sinusoid column will have a period of 1
         df = pd.DataFrame({"time": t, "sinusoid": np.sin(2 * np.pi * t)})
-        df_copy = df.copy(deep=True)
 
         # Make an event triggered response, NaN values are outside window
         df.loc[0:100, "sinusoid"] = np.nan
