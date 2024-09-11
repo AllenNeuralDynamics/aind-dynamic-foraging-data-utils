@@ -312,16 +312,10 @@ def create_df_trials(nwb_filename):
         "FIP_rising_time",
     ]
 
-    # TODO, should reprocess old files, and remove this logic
-    if "behavior" not in nwb.session_id:
-        subject_id, session_date, session_json_time = re.match(
-            r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<time>.*))\.json",
-            nwb.session_id,
-        ).groups()
-    else:
-        splits = nwb.session_id.split("_")
-        subject_id = splits[1]
-        session_date = splits[2]
+    # Parse subject and session_date
+    splits = nwb.session_id.split("_")
+    subject_id = splits[1]
+    session_date = splits[2]
 
     ses_idx = subject_id + "_" + session_date
 
