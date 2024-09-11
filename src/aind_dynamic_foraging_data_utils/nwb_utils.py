@@ -313,9 +313,14 @@ def create_df_trials(nwb_filename):
     ]
 
     # Parse subject and session_date
-    splits = nwb.session_id.split("_")
-    subject_id = splits[1]
-    session_date = splits[2]
+    if nwb.session_id.startswith('behavior') or nwb.session_id.startswith('FIP'):
+        splits = nwb.session_id.split("_")
+        subject_id = splits[1]
+        session_date = splits[2]
+    else:
+        splits = nwb.session_id.split("_")
+        subject_id = splits[0]
+        session_date = splits[1]       
 
     ses_idx = subject_id + "_" + session_date
 
