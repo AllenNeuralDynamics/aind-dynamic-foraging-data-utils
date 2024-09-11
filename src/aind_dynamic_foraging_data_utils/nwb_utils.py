@@ -312,16 +312,15 @@ def create_df_trials(nwb_filename):
         "FIP_rising_time",
     ]
 
-    # TODO, should reprocess old files, and remove this logic
-    if "behavior" not in nwb.session_id:
-        subject_id, session_date, session_json_time = re.match(
-            r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<time>.*))\.json",
-            nwb.session_id,
-        ).groups()
-    else:
+    # Parse subject and session_date
+    if nwb.session_id.startswith("behavior") or nwb.session_id.startswith("FIP"):
         splits = nwb.session_id.split("_")
         subject_id = splits[1]
         session_date = splits[2]
+    else:
+        splits = nwb.session_id.split("_")
+        subject_id = splits[0]
+        session_date = splits[1]
 
     ses_idx = subject_id + "_" + session_date
 
@@ -435,19 +434,29 @@ def create_events_df(nwb_filename, adjust_time=True):
             "FIP_falling_time",
             "FIP_rising_time",
             "G_1",
-            "G_1_preprocessed",
             "G_2",
-            "G_2_preprocessed",
             "Iso_1",
-            "Iso_1_preprocessed",
-            "Iso_1",
-            "Iso_1_preprocessed",
             "R_1",
-            "R_1_preprocessed",
             "R_2",
-            "R_2_preprocessed",
             "Iso_2",
-            "Iso_2_preprocessed",
+            "G_1_dff-bright",
+            "G_2_dff-bright",
+            "Iso_1_dff-bright",
+            "R_1_dff-bright",
+            "R_2_dff-bright",
+            "Iso_2_dff-bright",
+            "G_1_dff-exp",
+            "G_2_dff-exp",
+            "Iso_1_dff-exp",
+            "R_1_dff-exp",
+            "R_2_dff-exp",
+            "Iso_2_dff-exp",
+            "G_1_dff-poly",
+            "G_2_dff-poly",
+            "Iso_1_dff-poly",
+            "R_1_dff-poly",
+            "R_2_dff-poly",
+            "Iso_2_dff-poly",
         ]
     )
     event_types -= ignore_types
@@ -519,19 +528,29 @@ def create_fib_df(nwb_filename, tidy=False, adjust_time=True):
             "FIP_falling_time",
             "FIP_rising_time",
             "G_1",
-            "G_1_preprocessed",
             "G_2",
-            "G_2_preprocessed",
             "Iso_1",
-            "Iso_1_preprocessed",
-            "Iso_1",
-            "Iso_1_preprocessed",
             "R_1",
-            "R_1_preprocessed",
             "R_2",
-            "R_2_preprocessed",
             "Iso_2",
-            "Iso_2_preprocessed",
+            "G_1_dff-bright",
+            "G_2_dff-bright",
+            "Iso_1_dff-bright",
+            "R_1_dff-bright",
+            "R_2_dff-bright",
+            "Iso_2_dff-bright",
+            "G_1_dff-exp",
+            "G_2_dff-exp",
+            "Iso_1_dff-exp",
+            "R_1_dff-exp",
+            "R_2_dff-exp",
+            "Iso_2_dff-exp",
+            "G_1_dff-poly",
+            "G_2_dff-poly",
+            "Iso_1_dff-poly",
+            "R_1_dff-poly",
+            "R_2_dff-poly",
+            "Iso_2_dff-poly",
         ]
     )
     event_types = event_types.intersection(nwb_types)
