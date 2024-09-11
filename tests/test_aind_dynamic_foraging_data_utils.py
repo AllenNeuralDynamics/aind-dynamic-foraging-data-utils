@@ -35,7 +35,7 @@ class DynamicForagingTest(unittest.TestCase):
         # create a dataframe for one nwb file
         df = nwb_utils.create_df_trials(nwb_files[0])
         # check that the dataframe has correct session names
-        session_name = "_".join(nwb_files[0].split("/")[-1].split("_")[:-1])
+        session_name = "_".join(nwb_files[0].split("/")[-1].split("_")[1:-1])
         assert df.ses_idx[0] == session_name
 
     def test_get_time_array_with_sampling_rate(self):
