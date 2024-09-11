@@ -202,6 +202,7 @@ def event_triggered_response(  # noqa C901
     interpolate=True,
     censor=True,
     censor_times=None,
+    nan_policy="error",
 ):  # NOQA E501
     """
     Slices a timeseries relative to a given set of event times
@@ -280,6 +281,10 @@ def event_triggered_response(  # noqa C901
     censor_times: list or array or None
         if None, and censor is True, then use event_times as the censor times
         if times are provided, then these are the times at which ETR is censored
+    nan_policy: How to handle NaNs in the input data
+        "error": raise an exception if NaNs are present in the time window of an ETR
+        "interpolate": interpolate over NaN values
+        "exclude": exclude any response with a NaN in the response window
 
     Returns:
     --------
@@ -355,6 +360,8 @@ def event_triggered_response(  # noqa C901
 
     assert (not censor) or (output_format == "tidy"), "cannot censor data in wide output"
 
+    assert nan_policy in ["error", "interpolate", "exclude"], "unrecognized nan_policy"
+
     if censor:
         event_times = np.sort(event_times)
 
@@ -395,13 +402,42 @@ def event_triggered_response(  # noqa C901
                     }
                 )
 
-            # update our dictionary to have a new key defined as
-            # 'event_{EVENT NUMBER}_t={EVENT TIME}' and
-            # a value that includes an array that represents the
-            # sliced data around the current event, interpolated
-            # on the linearly spaced time array
+            elif np.any(np.isnan(data_slice)):
+                if nan_policy == "error":
+                    # raise exception
+                    raise Exception("NaN value in data slice, at event time {}".format(event_time))
+                elif nan_policy == "exclude":
+                    # exclude this event
+                    data_dict.update(
+                        {
+                            "event_{}_t={}".format(event_number, event_time): np.full(
+                                len(t_array), np.nan
+                            )
+                        }
+                    )
+                else:
+                    # Interpolate over NaNs
+                    x_data = data_slice[~data_slice.isnull()]
+                    data_slice[:] = np.interp(
+                        data_slice.index.values, x_data.index.values, x_data.values
+                    )
 
+                    # Add to data dict as normal
+                    data_dict.update(
+                        {
+                            "event_{}_t={}".format(event_number, event_time): np.interp(
+                                data_dict["time"],
+                                data_slice.index - event_time,
+                                data_slice.values,
+                            )
+                        }
+                    )
             else:
+                # update our dictionary to have a new key defined as
+                # 'event_{EVENT NUMBER}_t={EVENT TIME}' and
+                # a value that includes an array that represents the
+                # sliced data around the current event, interpolated
+                # on the linearly spaced time array
                 data_dict.update(
                     {
                         "event_{}_t={}".format(event_number, event_time): np.interp(

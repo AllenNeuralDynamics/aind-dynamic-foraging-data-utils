@@ -186,6 +186,82 @@ class DynamicForagingTest(unittest.TestCase):
         assert np.isclose(etr_censored.query("time > 1")["y"].mean(), 10, rtol=0.01)
         assert np.isclose(etr_censored.query("time < 0")["y"].mean(), 10, rtol=0.01)
 
+    def test_event_triggered_response_nan_policy(self):
+        """
+        tests the `test_event_triggered_response` function
+        """
+        # make a time vector from -10 to 110
+        t = np.arange(-10, 110, 0.01)
+
+        # Make a dataframe with one column as time, and another
+        # column called 'sinusoid' defined as sin(2*pi*t)
+        # The sinusoid column will have a period of 1
+        df = pd.DataFrame({"time": t, "sinusoid": np.sin(2 * np.pi * t)})
+
+        # Make an event triggered response, NaN values are outside window
+        df.loc[0:100, "sinusoid"] = np.nan
+        etr = alignment.event_triggered_response(
+            data=df,
+            t="time",
+            y="sinusoid",
+            event_times=np.arange(100),
+            t_before=1,
+            t_after=1,
+            output_sampling_rate=100,
+            nan_policy="error",
+        )
+
+        # Raises an error
+        df.loc[3980:4050, "sinusoid"] = np.nan
+        with self.assertRaises(Exception):
+            alignment.event_triggered_response(
+                data=df,
+                t="time",
+                y="sinusoid",
+                event_times=np.arange(100),
+                t_before=1,
+                t_after=1,
+                output_sampling_rate=100,
+                nan_policy="error",
+            )
+
+        # outputs are NaNs around NaN data
+        etr = alignment.event_triggered_response(
+            data=df,
+            t="time",
+            y="sinusoid",
+            event_times=np.arange(100),
+            t_before=1,
+            t_after=1,
+            output_sampling_rate=100,
+            nan_policy="exclude",
+        )
+        assert np.isclose(
+            etr.query("event_number == 29")["sinusoid"].isnull().mean(), 1.0, rtol=0.01
+        )
+        assert np.isclose(
+            etr.query("event_number == 30")["sinusoid"].isnull().mean(), 1.0, rtol=0.01
+        )
+        assert np.isclose(
+            etr.query("event_number == 31")["sinusoid"].isnull().mean(), 1.0, rtol=0.01
+        )
+        assert np.isclose(
+            etr.query("event_number not in [29,30,31]")["sinusoid"].isnull().mean(), 0.0, rtol=0.01
+        )
+
+        # outputs are NaNs around NaN data
+        etr = alignment.event_triggered_response(
+            data=df,
+            t="time",
+            y="sinusoid",
+            event_times=np.arange(100),
+            t_before=1,
+            t_after=1,
+            output_sampling_rate=100,
+            nan_policy="interpolate",
+        )
+        assert np.isclose(etr["sinusoid"].isnull().mean(), 0.0, rtol=0.01)
+
 
 if __name__ == "__main__":
     unittest.main()
