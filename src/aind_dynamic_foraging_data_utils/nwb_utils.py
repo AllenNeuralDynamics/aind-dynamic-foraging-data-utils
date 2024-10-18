@@ -579,6 +579,18 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
     df = df.sort_values(by="timestamps")
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
+    # Add session_idx with subject ID and session date info - JL
+    if nwb.session_id.startswith("behavior") or nwb.session_id.startswith("FIP"):
+        splits = nwb.session_id.split("_")
+        subject_id = splits[1]
+        session_date = splits[2]
+    else:
+        splits = nwb.session_id.split("_")
+        subject_id = splits[0]
+        session_date = splits[1]
+    ses_idx = subject_id + "_" + session_date
+    df["ses_idx"] = ses_idx
+
     # pivot table based on timestamps
     if not tidy:
         df_pivoted = pd.pivot(df, index="timestamps", columns=["event"], values="data")
