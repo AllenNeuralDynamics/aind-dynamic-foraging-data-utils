@@ -510,7 +510,7 @@ def create_events_df(nwb_filename, adjust_time=True):
     return df
 
 
-def create_fib_df(nwb_filename, tidy=False, adjust_time=True):
+def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
     """
     returns a dataframe of the FIB data in the nwb file
     if tidy, return a tidy dataframe
