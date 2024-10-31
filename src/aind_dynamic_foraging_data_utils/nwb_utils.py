@@ -329,7 +329,7 @@ def create_df_trials(nwb_filename):
     df_ses_trials["ses_idx"] = ses_idx
 
     # Adjust all times relative to start of the first trial
-    t0 = df_ses_trials.start_time[0]
+    t0 = df_ses_trials.goCue_start_time[0]
     skip_cols = ["right_valve_open_time", "left_valve_open_time"]
     for col in df_ses_trials.columns:
         if ("time" in col) and (col not in skip_cols):
