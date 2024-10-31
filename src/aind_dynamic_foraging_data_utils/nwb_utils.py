@@ -328,7 +328,7 @@ def create_df_trials(nwb_filename):
     df_ses_trials = df_ses_trials.rename(columns={"id": "trial"})
     df_ses_trials["ses_idx"] = ses_idx
 
-    # Adjust all times relative to start of the first trial
+    # Adjust all times relative to start of the first go cue
     t0 = df_ses_trials.goCue_start_time[0]
     skip_cols = ["right_valve_open_time", "left_valve_open_time"]
     for col in df_ses_trials.columns:
@@ -461,8 +461,8 @@ def create_events_df(nwb_filename, adjust_time=True):
     )
     event_types -= ignore_types
 
-    # Determine time 0
-    t0 = nwb.trials.start_time[0]
+    # Determine time 0 as first go Cue
+    t0 = nwb.trials.goCue_start_time[0]
 
     # Iterate over event types and build a dataframe of each
     events = []
@@ -560,7 +560,7 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
         return None
 
     # Determine time 0
-    t0 = nwb.trials.start_time[0]
+    t0 = nwb.trials.goCue_start_time[0]
 
     # Iterate over event types and build a dataframe of each
     events = []
