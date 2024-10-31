@@ -379,7 +379,7 @@ def create_df_trials(nwb_filename):
                 4,
             ),
             axis=1,
-        ) #TODO, something feels wrong here. event_times should be relative to t0
+        )  # TODO, something feels wrong here. event_times should be relative to t0
 
     # Compute time of reward for each trial
     df_ses_trials["reward_time"] = df_ses_trials.apply(
@@ -500,7 +500,7 @@ def create_events_df(nwb_filename, adjust_time=True):
     df = df.sort_values(by="timestamps")
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
-    # Add trial index for each event 
+    # Add trial index for each event
     trial_starts = nwb.trials.start_time[:] - nwb.trials.goCue_start_time[0]
     last_stop = nwb.trials.stop_time[-1] - nwb.trials.goCue_start_time[0]
     trial_index = []
@@ -604,6 +604,3 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
         return df_pivoted
     else:
         return df
-
-
-
