@@ -12,6 +12,7 @@ Utility functions for processing dynamic foraging data.
 
 import os
 import re
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -46,6 +47,7 @@ def unpack_metadata(nwb):
     Unpacks metadata as a dictionary attribute, instead of a Dynamic
     table nested inside a dictionary
     """
+    # TODO, this should be outdated once we fix the NWB files themselves
     nwb.metadata = nwb.scratch["metadata"].to_dataframe().iloc[0].to_dict()
 
 
@@ -297,20 +299,15 @@ def create_single_df_session(nwb_filename):
     return df_session
 
 
-def create_df_trials(nwb_filename):
+def create_df_trials(nwb_filename, adjust_time=True):
     """
     Process nwb and create df_trials for every single session
-    """
-    nwb = load_nwb_from_filename(nwb_filename)
 
-    key_from_acq = [
-        "left_lick_time",
-        "right_lick_time",
-        "left_reward_delivery_time",
-        "right_reward_delivery_time",
-        "FIP_falling_time",
-        "FIP_rising_time",
-    ]
+    adjust_time (bool) if true, adjust t0 to be the first gocue
+    """
+
+    # If we are given a filename, load the NWB object itself
+    nwb = load_nwb_from_filename(nwb_filename)
 
     # Parse subject and session_date
     if nwb.session_id.startswith("behavior") or nwb.session_id.startswith("FIP"):
@@ -321,108 +318,123 @@ def create_df_trials(nwb_filename):
         splits = nwb.session_id.split("_")
         subject_id = splits[0]
         session_date = splits[1]
-
     ses_idx = subject_id + "_" + session_date
 
-    df_ses_trials = nwb.trials.to_dataframe().reset_index()
-    df_ses_trials = df_ses_trials.rename(columns={"id": "trial"})
-    df_ses_trials["ses_idx"] = ses_idx
-
-    # Adjust all times relative to start of the first go cue
-    t0 = df_ses_trials.goCue_start_time[0]
-    skip_cols = ["right_valve_open_time", "left_valve_open_time"]
-    for col in df_ses_trials.columns:
-        if ("time" in col) and (col not in skip_cols):
-            df_ses_trials[col + "_absolute"] = df_ses_trials[col] - t0
+    # Build dataframe
+    df = nwb.trials.to_dataframe().reset_index()
+    df = df.rename(columns={"id": "trial"})
+    df["ses_idx"] = ses_idx
 
     # Adjust for gaps in trial start/stop, and use the last stop time
-    last_stop = df_ses_trials.iloc[-1]["stop_time_absolute"]
-    df_ses_trials["stop_time_absolute"] = df_ses_trials["start_time_absolute"].shift(
-        -1, fill_value=last_stop
-    )
+    last_stop = df.iloc[-1]["stop_time"]
+    df["stop_time"] = df["start_time"].shift(-1, fill_value=last_stop)
 
-    # Adjust times relative to go cue on each trial
-    for col in df_ses_trials.columns:
-        if (
-            ("time" in col)
-            and ("time_absolute" not in col)
-            and (col != "goCue_start_time")
-            and (col not in skip_cols)
-        ):
-            df_ses_trials.loc[:, col] = (
-                df_ses_trials[col].values - df_ses_trials["goCue_start_time"].values
-            )
-    df_ses_trials["goCue_start_time"] = 0.0
+    # We skip these columns because they are how long the valve is open
+    # not the times at which the valves were opened
+    skip_cols = ["right_valve_open_time", "left_valve_open_time"]
 
-    # TODO, CHECK FROM HERE
-    # TODO, a unit test that checks that the goCue_start_time in df_events matches goCue_start_time absolute in df_trials
-    # TODO, a unit test that matches that right/left licks in df_events.trial==i matches df_trials.loc[i]
-    # TODO, same with reward times
-    # TODO Trial 11, we seem to have a mismatch in reward_time
-    # TODO Trial 15, choice time mismatch
-    # Adjust event times relative to trial
-    events_ses = {key: nwb.acquisition[key].timestamps[:] - t0 for key in key_from_acq}
-    for event in [
+    # compute times relative to start of trial and start of session
+    t0 = nwb.trials.goCue_start_time[0]
+    drop_cols = []
+    for col in df.columns:
+        if ("time" in col) and (col not in skip_cols):
+            # Adjust all times relative to start of the first go cue
+            if adjust_time:
+                df[col + "_in_session"] = df[col] - t0
+            else:
+                df[col + "_in_session"] = df[col]
+
+            # Adjust times relative to go cue on each trial
+            if ("time" in col) and (col not in skip_cols):
+                df[col + "_in_trial"] = df[col].values - df["goCue_start_time"].values
+
+            # Clean up these column names that are not clear
+            drop_cols.append(col)
+
+    # Get lick and reward times
+    key_from_acq = [
         "left_lick_time",
         "right_lick_time",
         "left_reward_delivery_time",
         "right_reward_delivery_time",
-    ]:
-        event_times = events_ses[event]
-        df_ses_trials[event] = df_ses_trials.apply(
+    ]
+    if adjust_time:
+        events = {key: nwb.acquisition[key].timestamps[:] - t0 for key in key_from_acq}
+    else:
+        events = {key: nwb.acquisition[key].timestamps[:] for key in key_from_acq}
+
+    # Map events to trials
+    # Here we map an event to the most recent goCue
+    df["next_goCue_start_time_in_session"] = df["goCue_start_time_in_session"].shift(
+        -1, fill_value=np.inf
+    )
+    drop_cols.append("next_goCue_start_time_in_session")
+    for event in key_from_acq:
+        event_times = events[event]
+        df[event] = df.apply(
             lambda x: np.round(
                 event_times[
-                    (event_times > (x["goCue_start_time"] + x["goCue_start_time_absolute"]))
-                    & (event_times < (x["stop_time"] + x["goCue_start_time_absolute"]))
+                    (event_times > x["goCue_start_time_in_session"])
+                    & (event_times < x["next_goCue_start_time_in_session"])
                 ]
-                - x["goCue_start_time_absolute"],
-                4,
             ),
             axis=1,
-        )  # TODO, something feels wrong here. event_times should be relative to t0
+        )
 
     # Compute time of reward for each trial
-    df_ses_trials["reward_time"] = df_ses_trials.apply(
-        lambda x: np.nanmin(
-            np.concatenate(
-                [
-                    [np.nan],
-                    x["right_reward_delivery_time"],
-                    x["left_reward_delivery_time"],
-                ]
-            )
-        ),
-        axis=1,
-    )
-    df_ses_trials["reward_time_absolute"] = (
-        df_ses_trials["reward_time"] + df_ses_trials["goCue_start_time_absolute"]
-    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="All-NaN slice encountered")
+        df["reward_time_in_session"] = df.apply(
+            lambda x: np.nanmin(
+                np.concatenate(
+                    [
+                        [np.nan],
+                        x["right_reward_delivery_time"],
+                        x["left_reward_delivery_time"],
+                    ]
+                )
+            ),
+            axis=1,
+        )
+    df["reward_time_in_trial"] = df["reward_time_in_session"] - df["goCue_start_time_in_session"]
 
     # Compute time of choice for each trials
-    df_ses_trials["choice_time"] = df_ses_trials.apply(
-        lambda x: np.nanmin(np.concatenate([[np.nan], x["right_lick_time"], x["left_lick_time"]])),
-        axis=1,
-    )
-    df_ses_trials["choice_time_absolute"] = (
-        df_ses_trials["choice_time"] + df_ses_trials["goCue_start_time_absolute"]
-    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="All-NaN slice encountered")
+        df["choice_time_in_session"] = df.apply(
+            lambda x: np.nanmin(
+                np.concatenate([[np.nan], x["right_lick_time"], x["left_lick_time"]])
+            ),
+            axis=1,
+        )
+    df["choice_time_in_trial"] = df["choice_time_in_session"] - df["goCue_start_time_in_session"]
 
     # Compute boolean of whether animal was rewarded
-    df_ses_trials["reward"] = df_ses_trials.rewarded_historyR.astype(
-        int
-    ) | df_ses_trials.rewarded_historyL.astype(int)
+    df["reward"] = df.rewarded_historyR.astype(int) | df.rewarded_historyL.astype(int)
+
+    # Sanity checks
+    rewarded_df = df.query("reward == 1")
+    assert (
+        np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0
+    ), "Rewarded trials without reward time"
+    assert (
+        np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0
+    ), "Rewarded trials without choice time"
+    assert np.all(
+        rewarded_df["choice_time_in_session"] <= rewarded_df["reward_time_in_session"]
+    ), "Reward before choice time"
+
+    # TODO, fails because of manual rewards and auto rewards
+    # assert np.all(np.isnan(df.query('reward == 0')['reward_time_in_session'])), "Unrewarded trials with reward time"
+    # TODO, filter for earned rewards
 
     # Drop columns
-    df_ses_trials = df_ses_trials.drop(
-        columns=[
-            "left_lick_time",
-            "right_lick_time",
-            "left_reward_delivery_time",
-            "right_reward_delivery_time",
-        ]
-    )
-    # TODO CHECK TO HERE
-    return df_ses_trials
+    drop_cols += key_from_acq
+    df = df.drop(columns=drop_cols)
+
+    if adjust_time:
+        print("Timestamps are adjusted so t(0) = first go cue")
+    return df
 
 
 def create_events_df(nwb_filename, adjust_time=True):
@@ -517,7 +529,10 @@ def create_events_df(nwb_filename, adjust_time=True):
     # Sanity check that the first go cue is time 0
     gocues = df.query('event == "goCue_start_time"')
     if (len(gocues) > 0) and (adjust_time):
-        assert np.isclose(gocues.iloc[0]['timestamps'], 0, rtol=0.01)
+        assert np.isclose(gocues.iloc[0]["timestamps"], 0, rtol=0.01)
+
+    if adjust_time:
+        print("Timestamps are adjusted so t(0) = first go cue")
     return df
 
 
@@ -601,6 +616,9 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
         session_date = splits[1]
     ses_idx = subject_id + "_" + session_date
     df["ses_idx"] = ses_idx
+
+    if adjust_time:
+        print("Timestamps are adjusted so t(0) = first go cue")
 
     # pivot table based on timestamps
     if not tidy:
