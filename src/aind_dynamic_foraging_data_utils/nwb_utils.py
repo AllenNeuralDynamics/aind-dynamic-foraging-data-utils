@@ -372,12 +372,10 @@ def create_df_trials(nwb_filename, adjust_time=True):
     for event in key_from_acq:
         event_times = events[event]
         df[event] = df.apply(
-            lambda x: np.round(
-                event_times[
-                    (event_times > x["goCue_start_time_in_session"])
-                    & (event_times < x["next_goCue_start_time_in_session"])
-                ]
-            ),
+            lambda x: event_times[
+                (event_times >= x["goCue_start_time_in_session"])
+                & (event_times < x["next_goCue_start_time_in_session"])
+            ],
             axis=1,
         )
 
@@ -409,6 +407,11 @@ def create_df_trials(nwb_filename, adjust_time=True):
         )
     df["choice_time_in_trial"] = df["choice_time_in_session"] - df["goCue_start_time_in_session"]
 
+    # Filtering out choices greater than response window
+    slow_choice = df["choice_time_in_trial"] > df["response_duration"]
+    df.loc[slow_choice, "choice_time_in_session"] = np.nan
+    df.loc[slow_choice, "choice_time_in_trial"] = np.nan
+
     # Compute boolean of whether animal was rewarded
     df["reward"] = df.rewarded_historyR.astype(int) | df.rewarded_historyL.astype(int)
 
@@ -423,12 +426,16 @@ def create_df_trials(nwb_filename, adjust_time=True):
     assert np.all(
         rewarded_df["choice_time_in_session"] <= rewarded_df["reward_time_in_session"]
     ), "Reward before choice time"
+    assert np.all(
+        rewarded_df["choice_time_in_trial"] >= 0
+    ), "Rewarded trial with negative choice_time_in_trial"
 
     # TODO, fails because of manual rewards and auto rewards
     # assert (
     #    np.all(np.isnan(df.query('reward == 0')['reward_time_in_session'])
     # ), "Unrewarded trials with reward time"
-    # TODO, filter for earned rewards
+    # TODO, figure out how to deal with earned, manual, water, rewards
+    # TODO, documentation of added columns
 
     # Drop columns
     drop_cols += key_from_acq
