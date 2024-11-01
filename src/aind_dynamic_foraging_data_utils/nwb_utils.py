@@ -413,10 +413,11 @@ def create_df_trials(nwb_filename, adjust_time=True):
     df.loc[slow_choice, "choice_time_in_trial"] = np.nan
 
     # Compute boolean of whether animal was rewarded
-    df["reward"] = df.rewarded_historyR.astype(int) | df.rewarded_historyL.astype(int)
+    df["earned_reward"] = df.rewarded_historyR.astype(int) | df.rewarded_historyL.astype(int)
+    df["extra_reward"] = (df["earned_reward"] == 0) & df["reward_time_in_session"].notnull()
 
     # Sanity checks
-    rewarded_df = df.query("reward == 1")
+    rewarded_df = df.query("earned_reward == 1")
     assert (
         np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0
     ), "Rewarded trials without reward time"
@@ -429,12 +430,11 @@ def create_df_trials(nwb_filename, adjust_time=True):
     assert np.all(
         rewarded_df["choice_time_in_trial"] >= 0
     ), "Rewarded trial with negative choice_time_in_trial"
-
-    # TODO, fails because of manual rewards and auto rewards
-    # assert (
-    #    np.all(np.isnan(df.query('reward == 0')['reward_time_in_session'])
-    # ), "Unrewarded trials with reward time"
-    # TODO, figure out how to deal with earned, manual, water, rewards
+    assert np.all(
+        np.isnan(
+            df.query("earned_reward == 0").query("extra_reward == 0")["reward_time_in_session"]
+        )
+    ), "Unrewarded trials with reward time"
     # TODO, documentation of added columns
 
     # Drop columns
