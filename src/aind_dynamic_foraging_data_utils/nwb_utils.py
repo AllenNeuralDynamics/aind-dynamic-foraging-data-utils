@@ -425,7 +425,9 @@ def create_df_trials(nwb_filename, adjust_time=True):
     ), "Reward before choice time"
 
     # TODO, fails because of manual rewards and auto rewards
-    # assert np.all(np.isnan(df.query('reward == 0')['reward_time_in_session'])), "Unrewarded trials with reward time"
+    # assert (
+    #    np.all(np.isnan(df.query('reward == 0')['reward_time_in_session'])
+    # ), "Unrewarded trials with reward time"
     # TODO, filter for earned rewards
 
     # Drop columns
