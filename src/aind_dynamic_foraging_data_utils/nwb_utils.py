@@ -514,6 +514,10 @@ def create_events_df(nwb_filename, adjust_time=True):
             trial_index.append(starts[-1])
     df["trial"] = trial_index
 
+    # Sanity check that the first go cue is time 0
+    gocues = df.query('event == "goCue_start_time"')
+    if (len(gocues) > 0) and (adjust_time):
+        assert np.isclose(gocues.iloc[0]['timestamps'], 0, rtol=0.01)
     return df
 
 
