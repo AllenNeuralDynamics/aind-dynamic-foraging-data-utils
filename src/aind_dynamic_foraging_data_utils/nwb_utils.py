@@ -303,7 +303,17 @@ def create_df_trials(nwb_filename, adjust_time=True):
     """
     Process nwb and create df_trials for every single session
 
+    ARGS:
+    nwb_filename (str or NWB object), the session to extract the trials from
     adjust_time (bool) if true, adjust t0 to be the first gocue
+
+    RETURNS:
+    A pandas dataframe containing the columns of nwb.trials plus:
+    "_in_trial" time alignments where time is relative to the go cue on that trial
+    "_in_session" time alignments where time is relative to the first go cue
+        of the session.
+    earned_reward, (0 or 1) whether a reward was earned in that trial
+    extra_reward (bool) whether a manual reward was given in that trial
     """
 
     # If we are given a filename, load the NWB object itself
@@ -435,7 +445,6 @@ def create_df_trials(nwb_filename, adjust_time=True):
             df.query("earned_reward == 0").query("extra_reward == 0")["reward_time_in_session"]
         )
     ), "Unrewarded trials with reward time"
-    # TODO, documentation of added columns
 
     # Drop columns
     drop_cols += key_from_acq
