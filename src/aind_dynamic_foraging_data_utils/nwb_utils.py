@@ -490,7 +490,10 @@ def create_events_df(nwb_filename, adjust_time=True):
     event_types -= ignore_types
 
     # Determine time 0 as first go Cue
-    t0 = nwb.trials.goCue_start_time[0]
+    if adjust_time:
+        t0 = nwb.trials.goCue_start_time[0]
+    else:
+        t0 = 0
 
     # Iterate over event types and build a dataframe of each
     events = []
@@ -499,8 +502,7 @@ def create_events_df(nwb_filename, adjust_time=True):
         stamps = nwb.acquisition[e].timestamps[:]
         data = nwb.acquisition[e].data[:]
         labels = [e] * len(data)
-        if adjust_time:
-            stamps = stamps - t0
+        stamps = stamps - t0
         df = pd.DataFrame({"timestamps": stamps, "data": data, "event": labels})
         events.append(df)
 
@@ -509,8 +511,7 @@ def create_events_df(nwb_filename, adjust_time=True):
     for e in trial_events:
         stamps = nwb.trials[:][e].values
         labels = [e] * len(stamps)
-        if adjust_time:
-            stamps = stamps - t0
+        stamps = stamps - t0
         df = pd.DataFrame({"timestamps": stamps, "event": labels})
         events.append(df)
 
@@ -520,12 +521,8 @@ def create_events_df(nwb_filename, adjust_time=True):
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
     # Add trial index for each event
-    if adjust_time:
-        trial_starts = nwb.trials.start_time[:] - t0
-        last_stop = nwb.trials.stop_time[-1] - t0
-    else:
-        trial_starts = nwb.trials.start_time[:]
-        last_stop = nwb.trials.stop_time[-1]
+    trial_starts = nwb.trials.start_time[:] - t0
+    last_stop = nwb.trials.stop_time[-1] - t0
     trial_index = []
     for index, e in df.iterrows():
         starts = np.where(e.timestamps > trial_starts)[0]
