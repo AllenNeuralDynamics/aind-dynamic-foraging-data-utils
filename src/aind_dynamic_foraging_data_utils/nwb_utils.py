@@ -505,8 +505,6 @@ def create_events_df(nwb_filename, adjust_time=True):
         events.append(df)
 
     # Add keys from trials table
-    # I don't like hardcoding dynamic foraging specific things here.
-    # I think these keys should be added to the stimulus field of the nwb
     trial_events = ["goCue_start_time"]
     for e in trial_events:
         stamps = nwb.trials[:][e].values
@@ -522,8 +520,12 @@ def create_events_df(nwb_filename, adjust_time=True):
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
     # Add trial index for each event
-    trial_starts = nwb.trials.start_time[:] - nwb.trials.goCue_start_time[0]
-    last_stop = nwb.trials.stop_time[-1] - nwb.trials.goCue_start_time[0]
+    if adjust_time:
+        trial_starts = nwb.trials.start_time[:] - t0
+        last_stop = nwb.trials.stop_time[-1] - t0
+    else:
+        trial_starts = nwb.trials.start_time[:]
+        last_stop = nwb.trials.stop_time[-1]
     trial_index = []
     for index, e in df.iterrows():
         starts = np.where(e.timestamps > trial_starts)[0]
@@ -539,6 +541,7 @@ def create_events_df(nwb_filename, adjust_time=True):
     gocues = df.query('event == "goCue_start_time"')
     if (len(gocues) > 0) and (adjust_time):
         assert np.isclose(gocues.iloc[0]["timestamps"], 0, rtol=0.01)
+    # TODO, need more checks here for time alignment on trial index.
 
     if adjust_time:
         print("Timestamps are adjusted so t(0) = first go cue")
