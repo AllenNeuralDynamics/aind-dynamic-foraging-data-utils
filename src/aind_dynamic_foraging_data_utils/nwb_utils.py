@@ -19,6 +19,9 @@ import pandas as pd
 from pynwb import NWBHDF5IO
 from hdmf_zarr import NWBZarrIO
 
+# If we adjust time_in_session, adjust it to this
+SESSION_ALIGNMENT = "goCue_start_time"
+
 
 def load_nwb_from_filename(filename):
     """
@@ -312,7 +315,7 @@ def create_df_trials(nwb_filename, adjust_time=True):
     "_in_trial" time alignments where time is relative to the go cue on that trial
     "_in_session" time alignments where time is relative to the first go cue
         of the session.
-    earned_reward, (0 or 1) whether a reward was earned in that trial
+    earned_reward, (bool) whether a reward was earned in that trial
     extra_reward (bool) whether a manual reward was given in that trial
     """
 
@@ -344,7 +347,7 @@ def create_df_trials(nwb_filename, adjust_time=True):
     skip_cols = ["right_valve_open_time", "left_valve_open_time"]
 
     # compute times relative to start of trial and start of session
-    t0 = nwb.trials.goCue_start_time[0]
+    t0 = nwb.trials[SESSION_ALIGNMENT][0]
     drop_cols = []
     for col in df.columns:
         if ("time" in col) and (col not in skip_cols):
@@ -362,7 +365,7 @@ def create_df_trials(nwb_filename, adjust_time=True):
             drop_cols.append(col)
 
     # Add a column of raw time so users can map if they want
-    df["goCue_start_time_raw_time"] = df["goCue_start_time"]
+    df[SESSION_ALIGNMENT + "_raw"] = df[SESSION_ALIGNMENT]
 
     # Get lick and reward times
     key_from_acq = [
@@ -407,7 +410,9 @@ def create_df_trials(nwb_filename, adjust_time=True):
             ),
             axis=1,
         )
-    df["reward_time_in_trial"] = df["reward_time_in_session"] - df["goCue_start_time_in_session"]
+    df["reward_time_in_trial"] = (
+        df["reward_time_in_session"] - df[SESSION_ALIGNMENT + "_in_session"]
+    )
 
     # Compute time of choice for each trials
     with warnings.catch_warnings():
@@ -418,7 +423,9 @@ def create_df_trials(nwb_filename, adjust_time=True):
             ),
             axis=1,
         )
-    df["choice_time_in_trial"] = df["choice_time_in_session"] - df["goCue_start_time_in_session"]
+    df["choice_time_in_trial"] = (
+        df["choice_time_in_session"] - df[SESSION_ALIGNMENT + "_in_session"]
+    )
 
     # Filtering out choices greater than response window
     slow_choice = df["choice_time_in_trial"] > df["response_duration"]
@@ -427,31 +434,29 @@ def create_df_trials(nwb_filename, adjust_time=True):
 
     # Compute boolean of whether animal was rewarded
     # AutoWater and manual water is not included in earned_reward
-    df["earned_reward"] = df.rewarded_historyR.astype(int) | df.rewarded_historyL.astype(int)
-    df["extra_reward"] = (df["earned_reward"] == 0) & df["reward_time_in_session"].notnull()
+    df["earned_reward"] = df.rewarded_historyR | df.rewarded_historyL
+    df["extra_reward"] = (~df["earned_reward"]) & df["reward_time_in_session"].notnull()
 
     # Sanity checks
-    rewarded_df = df.query("earned_reward == 1")
+    rewarded_df = df.query("earned_reward")
     assert (
         np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0
     ), "Rewarded trials without reward time"
     assert (
         np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0
     ), "Rewarded trials without choice time"
-    assert np.all(
-        rewarded_df["choice_time_in_session"] <= rewarded_df["reward_time_in_session"]
-    ), "Reward before choice time"
+    # assert np.all(
+    #    rewarded_df["choice_time_in_session"] <= rewarded_df["reward_time_in_session"]
+    # ), "Reward before choice time"
+    if not np.all(rewarded_df["choice_time_in_session"] <= rewarded_df["reward_time_in_session"]):
+        warnings.warn("Reward before choice time. This is likely due to manual rewards")
+        # TODO, auto water can be delievered before choice time
     assert np.all(
         rewarded_df["choice_time_in_trial"] >= 0
     ), "Rewarded trial with negative choice_time_in_trial"
     assert np.all(
-        np.isnan(
-            df.query("earned_reward == 0").query("extra_reward == 0")["reward_time_in_session"]
-        )
+        np.isnan(df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"])
     ), "Unrewarded trials with reward time"
-    # TODO, auto water can be delievered before choice time
-    # TODO, assigning choice/reward should check for left/right
-
 
     # Drop columns
     drop_cols += key_from_acq
@@ -507,7 +512,7 @@ def create_events_df(nwb_filename, adjust_time=True):
 
     # Determine time 0 as first go Cue
     if adjust_time:
-        t0 = nwb.trials.goCue_start_time[0]
+        t0 = nwb.trials[SESSION_ALIGNMENT][0]
     else:
         t0 = 0
 
@@ -553,7 +558,7 @@ def create_events_df(nwb_filename, adjust_time=True):
     df["trial"] = trial_index
 
     # Sanity check that the first go cue is time 0
-    gocues = df.query('event == "goCue_start_time"')
+    gocues = df.query("event == @SESSION_ALIGNMENT")
     if (len(gocues) > 0) and (adjust_time):
         assert np.isclose(gocues.iloc[0]["timestamps"], 0, rtol=0.01)
     # TODO, need more checks here for time alignment on trial index.
@@ -614,7 +619,7 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
 
     # Determine time 0 as first go Cue
     if adjust_time:
-        t0 = nwb.trials.goCue_start_time[0]
+        t0 = nwb.trials[SESSION_ALIGNMENT][0]
     else:
         t0 = 0
 
