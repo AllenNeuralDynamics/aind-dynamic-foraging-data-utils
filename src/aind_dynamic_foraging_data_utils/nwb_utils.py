@@ -426,6 +426,7 @@ def create_df_trials(nwb_filename, adjust_time=True):
     df.loc[slow_choice, "choice_time_in_trial"] = np.nan
 
     # Compute boolean of whether animal was rewarded
+    # AutoWater and manual water is not included in earned_reward
     df["earned_reward"] = df.rewarded_historyR.astype(int) | df.rewarded_historyL.astype(int)
     df["extra_reward"] = (df["earned_reward"] == 0) & df["reward_time_in_session"].notnull()
 
@@ -449,6 +450,8 @@ def create_df_trials(nwb_filename, adjust_time=True):
         )
     ), "Unrewarded trials with reward time"
     # TODO, auto water can be delievered before choice time
+    # TODO, assigning choice/reward should check for left/right
+
 
     # Drop columns
     drop_cols += key_from_acq
