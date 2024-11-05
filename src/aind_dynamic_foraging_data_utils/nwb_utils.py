@@ -448,6 +448,7 @@ def create_df_trials(nwb_filename, adjust_time=True):
             df.query("earned_reward == 0").query("extra_reward == 0")["reward_time_in_session"]
         )
     ), "Unrewarded trials with reward time"
+    # TODO, auto water can be delievered before choice time
 
     # Drop columns
     drop_cols += key_from_acq
