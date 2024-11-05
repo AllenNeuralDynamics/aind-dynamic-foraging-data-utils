@@ -361,6 +361,9 @@ def create_df_trials(nwb_filename, adjust_time=True):
             # Clean up these column names that are not clear
             drop_cols.append(col)
 
+    # Add a column of raw time so users can map if they want
+    df["goCue_start_time_raw_time"] = df["goCue_start_time"]
+
     # Get lick and reward times
     key_from_acq = [
         "left_lick_time",
@@ -508,20 +511,22 @@ def create_events_df(nwb_filename, adjust_time=True):
     events = []
     for e in event_types:
         # For each event, get timestamps, data, and label
-        stamps = nwb.acquisition[e].timestamps[:]
+        raw_stamps = nwb.acquisition[e].timestamps[:]
         data = nwb.acquisition[e].data[:]
         labels = [e] * len(data)
-        stamps = stamps - t0
-        df = pd.DataFrame({"timestamps": stamps, "data": data, "event": labels})
+        stamps = raw_stamps - t0
+        df = pd.DataFrame(
+            {"timestamps": stamps, "data": data, "event": labels, "raw_timestamps": raw_stamps}
+        )
         events.append(df)
 
     # Add keys from trials table
     trial_events = ["goCue_start_time"]
     for e in trial_events:
-        stamps = nwb.trials[:][e].values
-        labels = [e] * len(stamps)
-        stamps = stamps - t0
-        df = pd.DataFrame({"timestamps": stamps, "event": labels})
+        raw_stamps = nwb.trials[:][e].values
+        labels = [e] * len(raw_stamps)
+        stamps = raw_stamps - t0
+        df = pd.DataFrame({"timestamps": stamps, "event": labels, "raw_timestamps": raw_stamps})
         events.append(df)
 
     # Build dataframe by concatenating each event
@@ -603,19 +608,23 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
     if len(event_types) == 0:
         return None
 
-    # Determine time 0
-    t0 = nwb.trials.goCue_start_time[0]
+    # Determine time 0 as first go Cue
+    if adjust_time:
+        t0 = nwb.trials.goCue_start_time[0]
+    else:
+        t0 = 0
 
     # Iterate over event types and build a dataframe of each
     events = []
     for e in event_types:
         # For each event, get timestamps, data, and label
-        stamps = nwb.acquisition[e].timestamps[:]
+        raw_stamps = nwb.acquisition[e].timestamps[:]
         data = nwb.acquisition[e].data[:]
         labels = [e] * len(data)
-        if adjust_time:
-            stamps = stamps - t0
-        df = pd.DataFrame({"timestamps": stamps, "data": data, "event": labels})
+        stamps = raw_stamps - t0
+        df = pd.DataFrame(
+            {"timestamps": stamps, "data": data, "event": labels, "raw_timestamps": raw_stamps}
+        )
         events.append(df)
 
     # Build dataframe by concatenating each event
