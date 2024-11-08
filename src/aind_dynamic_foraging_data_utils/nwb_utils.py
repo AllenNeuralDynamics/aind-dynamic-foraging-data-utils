@@ -359,6 +359,9 @@ def create_df_trials(nwb_filename, adjust_time=True):
 
             # Adjust times relative to go cue on each trial
             if ("time" in col) and (col not in skip_cols):
+                # Here we always align to goCue_start_time, not SESSION_ALIGNMENT
+                # since this aligns events relative to the trial go cue, not the start
+                # of the session
                 df[col + "_in_trial"] = df[col].values - df["goCue_start_time"].values
 
             # Clean up these column names that are not clear
@@ -435,6 +438,8 @@ def create_df_trials(nwb_filename, adjust_time=True):
     # Compute boolean of whether animal was rewarded
     # AutoWater and manual water is not included in earned_reward
     df["earned_reward"] = df.rewarded_historyR | df.rewarded_historyL
+    # TODO update this section once we have reliable labels for manual rewards
+    # See issue #54
     df["extra_reward"] = (~df["earned_reward"]) & df["reward_time_in_session"].notnull()
 
     # Sanity checks
@@ -463,7 +468,9 @@ def create_df_trials(nwb_filename, adjust_time=True):
     df = df.drop(columns=drop_cols)
 
     if adjust_time:
-        print("Timestamps are adjusted so t(0) = first go cue")
+        print(
+            "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
+        )
     return df
 
 
@@ -534,8 +541,11 @@ def create_events_df(nwb_filename, adjust_time=True):
     for e in trial_events:
         raw_stamps = nwb.trials[:][e].values
         labels = [e] * len(raw_stamps)
+        data = [1] * len(raw_stamps)
         stamps = raw_stamps - t0
-        df = pd.DataFrame({"timestamps": stamps, "event": labels, "raw_timestamps": raw_stamps})
+        df = pd.DataFrame(
+            {"timestamps": stamps, "data": data, "event": labels, "raw_timestamps": raw_stamps}
+        )
         events.append(df)
 
     # Build dataframe by concatenating each event
@@ -564,7 +574,9 @@ def create_events_df(nwb_filename, adjust_time=True):
     # TODO, need more checks here for time alignment on trial index.
 
     if adjust_time:
-        print("Timestamps are adjusted so t(0) = first go cue")
+        print(
+            "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
+        )
     return df
 
 
@@ -654,7 +666,9 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
     df["ses_idx"] = ses_idx
 
     if adjust_time:
-        print("Timestamps are adjusted so t(0) = first go cue")
+        print(
+            "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
+        )
 
     # pivot table based on timestamps
     if not tidy:
