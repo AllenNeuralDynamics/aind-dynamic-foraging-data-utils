@@ -29,6 +29,29 @@ To develop the code, run
 pip install -e .[dev]
 ```
 
+## Usage
+
+To load an NWB file
+```
+import aind_dynamic_foraging_data_utils.nwb_utils as nwb_utils
+nwb = nwb_utils.load_nwb_from_filename(<filepath>)
+```
+
+To extract a pandas dataframe of trials
+```
+df_trials = nwb_utils.create_df_trials(nwb)
+```
+
+To extract a pandas dataframe of events
+```
+df_events = nwb_utils.create_events_df(nwb)
+```
+
+To extract a pandas dataframe of photometry data
+```
+fip_df = nwb_utils.create_fib_df(nwb)
+```
+
 ## Contributing
 
 ### Linters and testing
