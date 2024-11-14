@@ -29,6 +29,49 @@ To develop the code, run
 pip install -e .[dev]
 ```
 
+## Usage
+
+### Accessing data from an NWB file
+To load an NWB file
+```
+import aind_dynamic_foraging_data_utils.nwb_utils as nwb_utils
+nwb = nwb_utils.load_nwb_from_filename(<filepath>)
+```
+
+To extract a pandas dataframe of trials
+```
+df_trials = nwb_utils.create_df_trials(nwb)
+```
+
+To extract a pandas dataframe of events
+```
+df_events = nwb_utils.create_events_df(nwb)
+```
+
+To extract a pandas dataframe of photometry data
+```
+fip_df = nwb_utils.create_fib_df(nwb)
+```
+
+By default, all of these functions adjust timestamps such that t(0) is the time of the first go cue. If you wish to disable this feature, use `adjust_time=False`
+
+### Time alignment tools
+To align a data variable to a set of timepoints and create an event triggered response use the alignment module. For example to align FIP data to each go cue:
+
+```
+import aind_dynamic_foraging_data_utils.alignment as alignment
+
+etr = alignment.event_triggered_response(
+    fip_df.query('event == "<FIP channel>"'),
+    "timestamps",
+    "data",
+    df_trials['goCue_start_time_in_session'].values,
+    t_start = 0,
+    t_end = 1,
+    output_sampling_rate=40
+    )
+```
+
 ## Contributing
 
 ### Linters and testing
