@@ -4,6 +4,7 @@
 """
 
 import glob
+
 from aind_dynamic_foraging_data_utils import nwb_utils
 
 # List of filepaths to NWBs

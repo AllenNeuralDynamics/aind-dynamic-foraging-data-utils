@@ -16,8 +16,8 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from pynwb import NWBHDF5IO
 from hdmf_zarr import NWBZarrIO
+from pynwb import NWBHDF5IO
 
 # If we adjust time_in_session, adjust it to this
 SESSION_ALIGNMENT = "goCue_start_time"
@@ -513,6 +513,24 @@ def create_events_df(nwb_filename, adjust_time=True):
             "R_1_dff-poly",
             "R_2_dff-poly",
             "Iso_2_dff-poly",
+            "G_1_preprocessed-poly",
+            "G_2_preprocessed-bright",
+            "G_1_preprocessed-exp",
+            "G_2_preprocessed-exp",
+            "G_2_preprocessed-poly",
+            "G_1_preprocessed-bright",
+            "Iso_1_preprocessed-poly",
+            "Iso_1_preprocessed-bright",
+            "Iso_2_preprocessed-bright",
+            "Iso_2_preprocessed-exp",
+            "Iso_2_preprocessed-poly",
+            "Iso_1_preprocessed-exp",
+            "R_1_preprocessed-bright",
+            "R_2_preprocessed-poly",
+            "R_2_preprocessed-exp",
+            "R_1_preprocessed-exp",
+            "R_1_preprocessed-poly",
+            "R_2_preprocessed-bright",
         ]
     )
     event_types -= ignore_types
