@@ -37,7 +37,23 @@ class DynamicForagingTest(unittest.TestCase):
         # check that the dataframe has correct session names
         session_name = "_".join(nwb_files[0].split("/")[-1].split("_")[0:-1])
         assert df.ses_idx[0] == session_name, "{} != {}".format(session_name, df.ses_idx[0])
+    
+    def test_create_events_df(self):
+        """
+        tests the create_events_df function
+        """
+        nwb_files = glob.glob("./tests/nwb/**.nwb")
+        df_events = nwb_utils.create_events_df(nwb_files[0])
+        assert df_events
 
+    def test_create_fib_df(self):
+        """
+        tests the create_df_fip function
+        """
+        nwb_files = glob.glob("./tests/nwb/**.nwb")
+        df_fip = nwb_utils.create_fib_df(nwb_files[0])
+        assert df_fip
+        
     def test_get_time_array_with_sampling_rate(self):
         """
         tests the `get_time_array` function while passing
