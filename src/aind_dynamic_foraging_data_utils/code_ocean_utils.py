@@ -22,11 +22,12 @@ from aind_dynamic_foraging_data_utils import nwb_utils
 
 URL = "https://api.allenneuraldynamics-test.org/v1/behavior_analysis/mle_fitting"
 
+
 def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
     """
     generate_data_asset_attach_params is a helper function for attach_data
     data_asset_IDs:  list of data asset IDs, i.e. the 16 hash string for the data asset in CO.
-    mount_point: the mount point for the data asset. Default is None.
+    mount_point: the mount point (folder) for the data asset. Default is None.
     """
     data_assets = []
     for ID in data_asset_IDs:
@@ -126,6 +127,7 @@ def get_all_df_for_nwb(filename_sessions, loc="../scratch/", interested_channels
         # I will fix this at a later date.... code to fix this is below
         df_trials = df_trials.reset_index()
         df_trials.to_csv(loc + "df_trials.csv", index=False)
+
 
 def check_avail_model_by_nwb_name(nwb_name):
     """
