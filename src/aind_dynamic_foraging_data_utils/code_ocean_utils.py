@@ -45,7 +45,7 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
                 https://docs.codeocean.com/user-guide/code-ocean-api/authentication#to-create-an-access-token
 
     Note that the list of data_asset_IDs should be <100 or you may risk CO crashing.
-    example: attach_data(da_data['processed_CO_dataID'].to_list()) 
+    example: attach_data(da_data['processed_CO_dataID'].to_list())
     """
     if len(data_asset_IDs) > 100:
         warnings.warn("list of data_asset_IDs are way too long! likely will crash CO. ")
