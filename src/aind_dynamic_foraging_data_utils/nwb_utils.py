@@ -140,13 +140,20 @@ def create_single_df_session_inner(nwb):
         weight_after_session = float(weight_after_session) if weight_after_session != "" else np.nan
         weight_before_session = float(nwb.subject.weight) if nwb.subject.weight != "" else np.nan
         user_name = nwb.experimenter[0]
-    else:
+    elif nwb.scratch:
         rig = nwb.scratch["metadata"].box[0]
         user_name = nwb.experimenter
         weight_after_session = nwb.scratch["metadata"].weight_after[0]
         water_during_session = nwb.scratch["metadata"].water_in_session_total[0]
         weight_before_session = weight_after_session - water_during_session
         extra_water = nwb.scratch["metadata"].water_in_session_manual[0]
+    else:
+        rig = 0
+        user_name = 0
+        weight_after_session = 0
+        water_during_session = 0
+        weight_before_session = 0
+        extra_water = 0
 
     dict_meta = {
         "rig": rig,
