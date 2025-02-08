@@ -72,6 +72,61 @@ etr = alignment.event_triggered_response(
     )
 ```
 
+
+### Code ocean utility code
+
+To attach data, you'll want to [create a token on code ocean ](https://docs.codeocean.com/user-guide/code-ocean-api/authentication#to-create-an-access-token) with all read/write permissions. Make sure to attach your token on your capsule. 
+
+Then, you should be able to access the token via `os.getenv(token_name)`. 
+
+To attach a long list of data, simply call 
+
+```
+attach_data(da_data['processed_CO_dataID'].to_list())
+```
+
+with da_data as a CSV here, and 'processed_CO_dataID' the 16 digit data asset ID from code ocean. 
+
+
+To get the dataframes from the NWBs, you can call function 
+
+```
+filename_sessions = glob.glob(f"../data/**/nwb/behavior**")
+SAVED_LOC = '../scratch/dfs'
+interested_channels = ['G_1_dff-poly', 'R_1_dff-poly', 'R_2_dff-poly']
+
+get_all_df_for_nwb(filename_sessions, loc = SAVED_LOC, interested_channels = interested_channels)
+```
+
+where filename_sessions are the folder locations for the newbs, loc is a folder location where the dataframes will be saved, interested channels are the channels you want to save for df_fip. 
+
+All dataframes are saved per session, other than df_trials (this is because some df_trials have 2 y coordinates for the lick tube, some have 1). 
+
+
+To check what available fitted models we already have for each session, you can check with: 
+
+```
+check_avail_model_by_nwb_name('746345_2024-11-22_09-55-54.nwb')
+```
+
+where you input the name of the session (formatted as `<subject_ID>_<collection_date>_<collection_time>.nwb`; sometimes a prefix of `behavior_` is needed). Currently the models that are fitted on all sessions should include: 
+
+['QLearning_L2F1_softmax', 'QLearning_L1F1_CK1_softmax', 'WSLS', 'QLearning_L1F0_epsi', 'QLearning_L2F1_CK1_softmax']
+
+You can find out more about these models by [going here. ]([url](https://foraging-behavior-browser.allenneuraldynamics-test.org/RL_model_playground#all-available-foragers))
+
+
+To enrich `df_sessions` and `df_trials` with the model information, you can use
+
+```
+nwb_name_for_models = [filename.split('/')[-1].replace('behavior_', '') for filename in filename_sessions]
+SAVED_LOC = '../scratch/dfs'
+get_foraging_model_info(df_trials, df_sess, nwb_name_for_models, loc = SAVED_LOC)
+```
+
+df_trials and df_sess are dataframes created from `get_all_df_for_nwb` and `nwb_name_for_models` formatted the same way for `check_avail_model_by_nwb_name`. 
+
+
 ## Contributing
 
 ### Linters and testing
