@@ -142,6 +142,17 @@ def check_avail_model_by_nwb_name(nwb_name):
     response = requests.get(
         URL, params={"filter": json.dumps(filter), "projection": json.dumps(projection)}
     )
+
+    if not response.json():
+        # small subset of sessions need "behavior" prefix.
+        filter_try2 = {
+            "nwb_name": "behavior_" + nwb_name,  # Session id,
+        }
+        response = requests.get(
+            URL,
+            params={"filter": json.dumps(filter_try2), "projection": json.dumps(projection)},
+        )
+
     fitted_models = [
         item["analysis_results"]["fit_settings"]["agent_alias"] for item in response.json()
     ]
