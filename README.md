@@ -98,10 +98,19 @@ interested_channels = ['G_1_dff-poly', 'R_1_dff-poly', 'R_2_dff-poly']
 get_all_df_for_nwb(filename_sessions, loc = SAVED_LOC, interested_channels = interested_channels)
 ```
 
-where filename_sessions are the folder locations for the newbs, loc is a folder location where the dataframes will be saved, interested channels are the channels you want to save for df_fip. 
+where filename_sessions are the folder locations for the nwbs, loc is a folder location where the dataframes will be saved, interested channels are the channels you want to save for df_fip. 
 
 All dataframes are saved per session, other than df_trials (this is because some df_trials have 2 y coordinates for the lick tube, some have 1). 
 
+To load the dataframes, use: 
+
+```
+df_sess = pd.read_csv(SAVED_LOC + 'df_sess.csv', index_col = False)
+df_events = pd.read_csv(SAVED_LOC + 'df_events.csv', index_col = False)
+df_trials = pd.read_csv(SAVED_LOC + 'df_trials.csv', index_col = 0)
+df_fip = pd.read_csv(SAVED_LOC + 'df_fip.csv', index_col = False)
+
+```
 
 To check what available fitted models we already have for each session, you can check with: 
 
