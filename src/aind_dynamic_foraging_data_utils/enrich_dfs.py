@@ -34,20 +34,6 @@ def get_df_fip_trials(input_obj):
         df_fip.loc[:,'data_z'] = df_fip.groupby(['ses_idx', 'event'])['data'].transform(lambda x: zscore(x, nan_policy='omit'))
 
 
-    # Add trial index for each event
-    # trial_starts = df_trials['goCue_start_time_in_session'].values
-    # last_stop = df_trials.stop_time_in_session.values[-1]
-    # trial_index = []
-    # for index, e in df_fip.iterrows():
-    #     starts = np.where(e.timestamps > trial_starts)[0]
-    #     if len(starts) == 0:
-    #         trial_index.append(-1)
-    #     elif e.timestamps > last_stop:
-    #         trial_index.append(len(trial_starts))
-    #     else:
-    #         trial_index.append(starts[-1])
-    # df_fip.loc[:,"trial"] = trial_index
-
     for (ses_idx, event), df_fip_i in df_fip.groupby(['ses_idx', 'event']):
         # pull fip data into df_trials 
 
@@ -73,6 +59,7 @@ def get_df_fip_trials(input_obj):
                                         (timepoints<(x[alignment_events[1]]+offsets[1]+x[absolute_time]))],
                                         axis=1)
     return (df_fip, df_trials)
+
 
 
 def tidy_df_trials(input_obj):
@@ -107,6 +94,10 @@ def tidy_df_trials(input_obj):
     for timestamp_col in timestamp_cols:
         event = timestamp_col.replace("timestamps_", "")  # Extract event name
 
+        # correct timestamp from _in_trial to _in_session
+        df_trials[timestamp_col] = df_trials.apply(
+            lambda row: np.array(row[timestamp_col]) + row['goCue_start_time_in_session'], axis=1
+        )
         # Find matching data columns for this event
         matching_data_cols = [col for col in data_cols if event in col]
 
@@ -134,6 +125,7 @@ def tidy_df_trials(input_obj):
 
     return df_fip_tonic.dropna().reset_index()
 
+
 def remove_tonic_df_fip(input_obj, col_signal='data', col_time='timestamps', baseline=[-1, 0], tidy = True):
     """
     Removes tonic activity by normalizing signal data against baseline.
@@ -157,11 +149,15 @@ def remove_tonic_df_fip(input_obj, col_signal='data', col_time='timestamps', bas
     else:
         df_trials_fip, df_fip = input_obj.df_trials, input_obj.df_fip
 
-    col_signals = [col for col in df_trials_fip.columns if col.startswith(col_signal) and not col.endswith('_baseline')]
+    col_signals = [col for col in df_trials_fip.columns if col.startswith(col_signal) 
+                                                and not col.endswith('_baseline')
+                                                and not col.endswith('_norm')]
 
     # for this to work, i need to match df_fip_trials to as close to the OUTPUT to def create_df_trials_events
     # check this against the format_data_OLD.ipynb and undersatnd why df_fip_trials works! 
     for col_signal in col_signals:
+        if col_signal + '_norm' in df_trials_fip.columns:
+            continue
         signal_name = col_signal.removeprefix('data_z').removeprefix('data').removesuffix('_norm')
         df_trials_fip.loc[:, col_signal+'_baseline'] = df_trials_fip.apply(lambda x: np.mean(
                                             x[col_signal][(x[col_time+signal_name]<baseline[1]) & 
@@ -173,4 +169,3 @@ def remove_tonic_df_fip(input_obj, col_signal='data', col_time='timestamps', bas
     if tidy:
         return tidy_df_trials((df_trials_fip, df_fip))
     return df_trials_fip
-
