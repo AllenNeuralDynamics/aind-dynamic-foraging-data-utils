@@ -492,54 +492,21 @@ def create_events_df(nwb_filename, adjust_time=True):
 
     # Build list of all event types in acqusition, ignore FIP events
     event_types = set(nwb.acquisition.keys())
+    channels = ["G", "R", "Iso"]
+    fibers = ["0", "1", "2", "3", "4"]
+    methods = [
+        "dff-bright",
+        "dff-exp",
+        "dff-poly",
+        "preprocessed-bright",
+        "preprocessed-exp",
+        "preprocessed-exp",
+    ]
     ignore_types = set(
-        [
-            "FIP_falling_time",
-            "FIP_rising_time",
-            "G_1",
-            "G_2",
-            "Iso_1",
-            "R_1",
-            "R_2",
-            "Iso_2",
-            "G_1_dff-bright",
-            "G_2_dff-bright",
-            "Iso_1_dff-bright",
-            "R_1_dff-bright",
-            "R_2_dff-bright",
-            "Iso_2_dff-bright",
-            "G_1_dff-exp",
-            "G_2_dff-exp",
-            "Iso_1_dff-exp",
-            "R_1_dff-exp",
-            "R_2_dff-exp",
-            "Iso_2_dff-exp",
-            "G_1_dff-poly",
-            "G_2_dff-poly",
-            "Iso_1_dff-poly",
-            "R_1_dff-poly",
-            "R_2_dff-poly",
-            "Iso_2_dff-poly",
-            "G_1_preprocessed-poly",
-            "G_2_preprocessed-bright",
-            "G_1_preprocessed-exp",
-            "G_2_preprocessed-exp",
-            "G_2_preprocessed-poly",
-            "G_1_preprocessed-bright",
-            "Iso_1_preprocessed-poly",
-            "Iso_1_preprocessed-bright",
-            "Iso_2_preprocessed-bright",
-            "Iso_2_preprocessed-exp",
-            "Iso_2_preprocessed-poly",
-            "Iso_1_preprocessed-exp",
-            "R_1_preprocessed-bright",
-            "R_2_preprocessed-poly",
-            "R_2_preprocessed-exp",
-            "R_1_preprocessed-exp",
-            "R_1_preprocessed-poly",
-            "R_2_preprocessed-bright",
-        ]
+        [x[0] + "_" + x[1] + "_" + x[2] for x in list(itertools.product(channels, fibers, methods))]
     )
+    ignore_types.add("FIP_falling_time")
+    ignore_types.add("FIP_rising_time")
     event_types -= ignore_types
 
     # Determine time 0 as first go Cue
@@ -618,54 +585,21 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
 
     # Build list of all FIB events in NWB file
     nwb_types = set(nwb.acquisition.keys())
+    channels = ["G", "R", "Iso"]
+    fibers = ["0", "1", "2", "3", "4"]
+    methods = [
+        "dff-bright",
+        "dff-exp",
+        "dff-poly",
+        "preprocessed-bright",
+        "preprocessed-exp",
+        "preprocessed-exp",
+    ]
     event_types = set(
-        [
-            "FIP_falling_time",
-            "FIP_rising_time",
-            "G_1",
-            "G_2",
-            "Iso_1",
-            "R_1",
-            "R_2",
-            "Iso_2",
-            "G_1_dff-bright",
-            "G_2_dff-bright",
-            "Iso_1_dff-bright",
-            "R_1_dff-bright",
-            "R_2_dff-bright",
-            "Iso_2_dff-bright",
-            "G_1_dff-exp",
-            "G_2_dff-exp",
-            "Iso_1_dff-exp",
-            "R_1_dff-exp",
-            "R_2_dff-exp",
-            "Iso_2_dff-exp",
-            "G_1_dff-poly",
-            "G_2_dff-poly",
-            "Iso_1_dff-poly",
-            "R_1_dff-poly",
-            "R_2_dff-poly",
-            "Iso_2_dff-poly",
-            "G_1_preprocessed-poly",
-            "G_2_preprocessed-bright",
-            "G_1_preprocessed-exp",
-            "G_2_preprocessed-exp",
-            "G_2_preprocessed-poly",
-            "G_1_preprocessed-bright",
-            "Iso_1_preprocessed-poly",
-            "Iso_1_preprocessed-bright",
-            "Iso_2_preprocessed-bright",
-            "Iso_2_preprocessed-exp",
-            "Iso_2_preprocessed-poly",
-            "Iso_1_preprocessed-exp",
-            "R_1_preprocessed-bright",
-            "R_2_preprocessed-poly",
-            "R_2_preprocessed-exp",
-            "R_1_preprocessed-exp",
-            "R_1_preprocessed-poly",
-            "R_2_preprocessed-bright",
-        ]
+        [x[0] + "_" + x[1] + "_" + x[2] for x in list(itertools.product(channels, fibers, methods))]
     )
+    event_types.add("FIP_falling_time")
+    event_types.add("FIP_rising_time")
     event_types = event_types.intersection(nwb_types)
 
     # If no FIB data available
