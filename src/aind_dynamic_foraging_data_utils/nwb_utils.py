@@ -13,6 +13,7 @@ Utility functions for processing dynamic foraging data.
 import os
 import re
 import warnings
+import itertools
 
 import numpy as np
 import pandas as pd
