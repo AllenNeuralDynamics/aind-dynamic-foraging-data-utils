@@ -496,15 +496,19 @@ def create_events_df(nwb_filename, adjust_time=True):
     channels = ["G", "R", "Iso"]
     fibers = ["0", "1", "2", "3", "4"]
     methods = [
+        "",
         "dff-bright",
         "dff-exp",
         "dff-poly",
         "preprocessed-bright",
         "preprocessed-exp",
-        "preprocessed-exp",
+        "preprocessed-poly",
     ]
     ignore_types = set(
-        [x[0] + "_" + x[1] + "_" + x[2] for x in list(itertools.product(channels, fibers, methods))]
+        [
+            x[0] + "_" + x[1] + "_" + x[2] if len(x[2]) > 0 else x[0] + "_" + x[1]
+            for x in list(itertools.product(channels, fibers, methods))
+        ]
     )
     ignore_types.add("FIP_falling_time")
     ignore_types.add("FIP_rising_time")
@@ -589,15 +593,19 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
     channels = ["G", "R", "Iso"]
     fibers = ["0", "1", "2", "3", "4"]
     methods = [
+        "",
         "dff-bright",
         "dff-exp",
         "dff-poly",
         "preprocessed-bright",
         "preprocessed-exp",
-        "preprocessed-exp",
+        "preprocessed-poly",
     ]
     event_types = set(
-        [x[0] + "_" + x[1] + "_" + x[2] for x in list(itertools.product(channels, fibers, methods))]
+        [
+            x[0] + "_" + x[1] + "_" + x[2] if len(x[2]) > 0 else x[0] + "_" + x[1]
+            for x in list(itertools.product(channels, fibers, methods))
+        ]
     )
     event_types.add("FIP_falling_time")
     event_types.add("FIP_rising_time")
