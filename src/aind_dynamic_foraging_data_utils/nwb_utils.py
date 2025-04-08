@@ -425,6 +425,13 @@ def create_df_trials(nwb_filename, adjust_time=True):
         df["reward_time_in_session"] - df[SESSION_ALIGNMENT + "_in_session"]
     )
 
+    # Compute boolean of whether animal was rewarded
+    # AutoWater and manual water is not included in earned_reward
+    df["earned_reward"] = df.rewarded_historyR | df.rewarded_historyL
+    # TODO update this section once we have reliable labels for manual rewards
+    # See issue #54
+    df["extra_reward"] = (~df["earned_reward"]) & df["reward_time_in_session"].notnull()
+
     # Compute time of choice for each trials
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message="All-NaN slice encountered")
@@ -439,16 +446,11 @@ def create_df_trials(nwb_filename, adjust_time=True):
     )
 
     # Filtering out choices greater than response window
-    slow_choice = df["choice_time_in_trial"] > df["response_duration"]
+    slow_choice = (df["choice_time_in_trial"] > df["response_duration"]) & (~df['earned_reward'])
     df.loc[slow_choice, "choice_time_in_session"] = np.nan
     df.loc[slow_choice, "choice_time_in_trial"] = np.nan
-
-    # Compute boolean of whether animal was rewarded
-    # AutoWater and manual water is not included in earned_reward
-    df["earned_reward"] = df.rewarded_historyR | df.rewarded_historyL
-    # TODO update this section once we have reliable labels for manual rewards
-    # See issue #54
-    df["extra_reward"] = (~df["earned_reward"]) & df["reward_time_in_session"].notnull()
+    if np.sum(df['choice_time_in_trial'] > df['response_duration']) > 0:
+        warnings.warn('Response time greater than minimum, something unusual happened') 
 
     # Sanity checks
     rewarded_df = df.query("earned_reward")
