@@ -1,7 +1,6 @@
 """
 Utility functions for processing dynamic foraging data.
     load_nwb_from_filename
-    unpack_metadata
     create_single_df_session_inner
     create_df_session
     create_single_df_session
@@ -44,16 +43,6 @@ def load_nwb_from_filename(filename):
     else:
         # Assuming its already an NWB
         return filename
-
-
-def unpack_metadata(nwb):
-    """
-    Unpacks metadata as a dictionary attribute, instead of a Dynamic
-    table nested inside a dictionary
-    """
-    # TODO, this should be outdated once we fix the NWB files themselves
-    nwb.metadata = nwb.scratch["metadata"].to_dataframe().iloc[0].to_dict()
-
 
 def create_single_df_session_inner(nwb):
     """
@@ -310,7 +299,7 @@ def create_single_df_session(nwb_filename):
     return df_session
 
 
-def create_df_trials(nwb_filename, adjust_time=True):
+def create_df_trials(nwb_filename, adjust_time=True, verbose=True):
     """
     Process nwb and create df_trials for every single session
 
@@ -477,18 +466,19 @@ def create_df_trials(nwb_filename, adjust_time=True):
     drop_cols += key_from_acq
     df = df.drop(columns=drop_cols)
 
-    if adjust_time:
+    if adjust_time and verbose:
         print(
             "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
         )
     return df
 
 
-def create_events_df(nwb_filename, adjust_time=True):
+def create_events_df(nwb_filename, adjust_time=True,verbose=True):
     """
     returns a tidy dataframe of the events in the nwb file
 
     adjust_time (bool), set time of first goCue to t=0
+    verbose (bool), give warnings for adjustments
     """
 
     nwb = load_nwb_from_filename(nwb_filename)
@@ -572,14 +562,14 @@ def create_events_df(nwb_filename, adjust_time=True):
         assert np.isclose(gocues.iloc[0]["timestamps"], 0, rtol=0.01)
     # TODO, need more checks here for time alignment on trial index.
 
-    if adjust_time:
+    if adjust_time and verbose:
         print(
             "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
         )
     return df
 
 
-def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
+def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     """
     returns a dataframe of the FIB data in the nwb file
     if tidy, return a tidy dataframe
@@ -653,7 +643,7 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
     ses_idx = subject_id + "_" + session_date
     df["ses_idx"] = ses_idx
 
-    if adjust_time:
+    if adjust_time and verbose:
         print(
             "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
         )
