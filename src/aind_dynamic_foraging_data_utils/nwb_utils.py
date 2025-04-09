@@ -9,10 +9,10 @@ Utility functions for processing dynamic foraging data.
     create_fib_df
 """
 
+import itertools
 import os
 import re
 import warnings
-import itertools
 
 import numpy as np
 import pandas as pd
@@ -43,6 +43,7 @@ def load_nwb_from_filename(filename):
     else:
         # Assuming its already an NWB
         return filename
+
 
 def create_single_df_session_inner(nwb):
     """
@@ -435,11 +436,11 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):
     )
 
     # Filtering out choices greater than response window
-    slow_choice = (df["choice_time_in_trial"] > df["response_duration"]) & (~df['earned_reward'])
+    slow_choice = (df["choice_time_in_trial"] > df["response_duration"]) & (~df["earned_reward"])
     df.loc[slow_choice, "choice_time_in_session"] = np.nan
     df.loc[slow_choice, "choice_time_in_trial"] = np.nan
-    if np.sum(df['choice_time_in_trial'] > df['response_duration']) > 0:
-        warnings.warn('Response time greater than minimum, something unusual happened') 
+    if np.sum(df["choice_time_in_trial"] > df["response_duration"]) > 0:
+        warnings.warn("Response time greater than minimum, something unusual happened")
 
     # Sanity checks
     rewarded_df = df.query("earned_reward")
@@ -473,7 +474,7 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):
     return df
 
 
-def create_events_df(nwb_filename, adjust_time=True,verbose=True):
+def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     """
     returns a tidy dataframe of the events in the nwb file
 
