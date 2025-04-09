@@ -300,7 +300,7 @@ def create_single_df_session(nwb_filename):
     return df_session
 
 
-def create_df_trials(nwb_filename, adjust_time=True, verbose=True):
+def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     """
     Process nwb and create df_trials for every single session
 
