@@ -28,6 +28,7 @@ RESPONSE_TIMING_TOLERANCE = 0.005
 # Tolerance for responses before the go cue
 CHOICE_TIMING_TOLERANCE = 0.005
 
+
 def load_nwb_from_filename(filename):
     """
     Load NWB from file, checking for HDF5 or Zarr
@@ -393,21 +394,25 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     drop_cols.append("next_goCue_start_time_in_session")
 
     # Create column with CHOICE TIMING TOLERANCE
-    df['next_goCue_start_time_in_session_tolerance'] = df['next_goCue_start_time_in_session'] - CHOICE_TIMING_TOLERANCE
-    df['goCue_start_time_in_session_tolerance'] = df['goCue_start_time_in_session'] - CHOICE_TIMING_TOLERANCE
+    df["next_goCue_start_time_in_session_tolerance"] = (
+        df["next_goCue_start_time_in_session"] - CHOICE_TIMING_TOLERANCE
+    )
+    df["goCue_start_time_in_session_tolerance"] = (
+        df["goCue_start_time_in_session"] - CHOICE_TIMING_TOLERANCE
+    )
     drop_cols.append("next_goCue_start_time_in_session_tolerance")
     drop_cols.append("goCue_start_time_in_session_tolerance")
-    
+
     for event in key_from_acq:
         event_times = events[event]
-        if event in ['left_lick_time','right_lick_time']:
-            times = '_tolerance'
+        if event in ["left_lick_time", "right_lick_time"]:
+            times = "_tolerance"
         else:
-            times = ''
+            times = ""
         df[event] = df.apply(
             lambda x: event_times[
-                (event_times >= x["goCue_start_time_in_session"+times])
-                & (event_times < x["next_goCue_start_time_in_session"+times])
+                (event_times >= x["goCue_start_time_in_session" + times])
+                & (event_times < x["next_goCue_start_time_in_session" + times])
             ],
             axis=1,
         )
@@ -468,9 +473,9 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     )
 
     # Filtering out choices greater than response window
-    slow_choice = (df["choice_time_in_trial"] > df["response_duration"] + RESPONSE_TIMING_TOLERANCE) & (
-        ~df["earned_reward"]
-    )
+    slow_choice = (
+        df["choice_time_in_trial"] > df["response_duration"] + RESPONSE_TIMING_TOLERANCE
+    ) & (~df["earned_reward"])
     df.loc[slow_choice, "choice_time_in_session"] = np.nan
     df.loc[slow_choice, "choice_time_in_trial"] = np.nan
     if np.sum(df["choice_time_in_trial"] > df["response_duration"] + RESPONSE_TIMING_TOLERANCE) > 0:
