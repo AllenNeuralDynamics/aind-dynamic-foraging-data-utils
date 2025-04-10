@@ -22,6 +22,8 @@ from pynwb import NWBHDF5IO
 # If we adjust time_in_session, adjust it to this
 SESSION_ALIGNMENT = "goCue_start_time"
 
+# Tolerance for responses to be outside the response window
+TIMING_TOLERANCE = 0.01
 
 def load_nwb_from_filename(filename):
     """
@@ -436,10 +438,10 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     )
 
     # Filtering out choices greater than response window
-    slow_choice = (df["choice_time_in_trial"] > df["response_duration"]) & (~df["earned_reward"])
+    slow_choice = (df["choice_time_in_trial"] > df["response_duration"]+TIMING_TOLERANCE) & (~df["earned_reward"])
     df.loc[slow_choice, "choice_time_in_session"] = np.nan
     df.loc[slow_choice, "choice_time_in_trial"] = np.nan
-    if np.sum(df["choice_time_in_trial"] > df["response_duration"]) > 0:
+    if np.sum(df["choice_time_in_trial"] > df["response_duration"]+TIMING_TOLERANCE) > 0:
         warnings.warn("Response time greater than minimum, something unusual happened")
 
     # Sanity checks
@@ -455,7 +457,9 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     # ), "Reward before choice time"
     if not np.all(rewarded_df["choice_time_in_session"] <= rewarded_df["reward_time_in_session"]):
         warnings.warn("Reward before choice time. This is likely due to manual rewards")
-        # TODO, auto water can be delievered before choice time
+    # This check should exclude trials with manual water. 
+    # But it appears that "extra_reward" doesn't capture everything, probably because there is an edge
+    # case where you have BOTH a manual reward and an earned reward
     assert np.all(
         rewarded_df["choice_time_in_trial"] >= 0
     ), "Rewarded trial with negative choice_time_in_trial"
