@@ -468,20 +468,19 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     assert (
         np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0
     ), "Rewarded trials without reward time"
+
     assert (
         np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0
     ), "Rewarded trials without choice time"
-    # assert np.all(
-    #    rewarded_df["choice_time_in_session"] <= rewarded_df["reward_time_in_session"]
-    # ), "Reward before choice time"
-    earned_rewarded_df = rewarded_df.query("not extra_reward")
-    if not np.all(
-        earned_rewarded_df["choice_time_in_session"] <= earned_rewarded_df["reward_time_in_session"]
-    ):
+
+    earned_df = rewarded_df.query("not extra_reward")
+    if not np.all(earned_df["choice_time_in_session"] <= earned_df["reward_time_in_session"]):
         warnings.warn("Reward before choice time. This is likely due to manual rewards")
+
     assert np.all(
         rewarded_df["choice_time_in_trial"] >= 0
     ), "Rewarded trial with negative choice_time_in_trial"
+
     assert np.all(
         np.isnan(df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"])
     ), "Unrewarded trials with reward time"
