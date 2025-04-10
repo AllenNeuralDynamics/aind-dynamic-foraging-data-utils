@@ -23,8 +23,10 @@ from pynwb import NWBHDF5IO
 SESSION_ALIGNMENT = "goCue_start_time"
 
 # Tolerance for responses to be outside the response window
-TIMING_TOLERANCE = 0.01
+RESPONSE_TIMING_TOLERANCE = 0.005
 
+# Tolerance for responses before the go cue
+CHOICE_TIMING_TOLERANCE = 0.005
 
 def load_nwb_from_filename(filename):
     """
@@ -389,12 +391,23 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
         -1, fill_value=np.inf
     )
     drop_cols.append("next_goCue_start_time_in_session")
+
+    # Create column with CHOICE TIMING TOLERANCE
+    df['next_goCue_start_time_in_session_tolerance'] = df['next_goCue_start_time_in_session'] - CHOICE_TIMING_TOLERANCE
+    df['goCue_start_time_in_session_tolerance'] = df['goCue_start_time_in_session'] - CHOICE_TIMING_TOLERANCE
+    drop_cols.append("next_goCue_start_time_in_session_tolerance")
+    drop_cols.append("goCue_start_time_in_session_tolerance")
+    
     for event in key_from_acq:
         event_times = events[event]
+        if event in ['left_lick_time','right_lick_time']:
+            times = '_tolerance'
+        else:
+            times = ''
         df[event] = df.apply(
             lambda x: event_times[
-                (event_times >= x["goCue_start_time_in_session"])
-                & (event_times < x["next_goCue_start_time_in_session"])
+                (event_times >= x["goCue_start_time_in_session"+times])
+                & (event_times < x["next_goCue_start_time_in_session"+times])
             ],
             axis=1,
         )
@@ -455,12 +468,12 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     )
 
     # Filtering out choices greater than response window
-    slow_choice = (df["choice_time_in_trial"] > df["response_duration"] + TIMING_TOLERANCE) & (
+    slow_choice = (df["choice_time_in_trial"] > df["response_duration"] + RESPONSE_TIMING_TOLERANCE) & (
         ~df["earned_reward"]
     )
     df.loc[slow_choice, "choice_time_in_session"] = np.nan
     df.loc[slow_choice, "choice_time_in_trial"] = np.nan
-    if np.sum(df["choice_time_in_trial"] > df["response_duration"] + TIMING_TOLERANCE) > 0:
+    if np.sum(df["choice_time_in_trial"] > df["response_duration"] + RESPONSE_TIMING_TOLERANCE) > 0:
         warnings.warn("Response time greater than minimum, something unusual happened")
 
     # Sanity checks
@@ -478,7 +491,7 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
         warnings.warn("Reward before choice time. This is likely due to manual rewards")
 
     assert np.all(
-        rewarded_df["choice_time_in_trial"] >= 0
+        rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE
     ), "Rewarded trial with negative choice_time_in_trial"
 
     assert np.all(
