@@ -25,6 +25,7 @@ SESSION_ALIGNMENT = "goCue_start_time"
 # Tolerance for responses to be outside the response window
 TIMING_TOLERANCE = 0.01
 
+
 def load_nwb_from_filename(filename):
     """
     Load NWB from file, checking for HDF5 or Zarr
@@ -417,12 +418,28 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
         df["reward_time_in_session"] - df[SESSION_ALIGNMENT + "_in_session"]
     )
 
+    # Add annotation of reward types
+    for event in ["right_reward_delivery_time", "left_reward_delivery_time"]:
+        times = events[event]
+        data = nwb.acquisition[event].data[:]
+        mapper = {x[0]: x[1] for x in zip(times, data)}
+        df[event.split("delivery_time")[0] + "type"] = [
+            mapper[x[0]] if len(x) > 0 else np.nan for x in df[event]
+        ]
+
     # Compute boolean of whether animal was rewarded
     # AutoWater and manual water is not included in earned_reward
     df["earned_reward"] = df.rewarded_historyR | df.rewarded_historyL
-    # TODO update this section once we have reliable labels for manual rewards
-    # See issue #54
-    df["extra_reward"] = (~df["earned_reward"]) & df["reward_time_in_session"].notnull()
+    if np.sum(df["right_reward_type"] == "earned") > 0:
+        # We have reward type annotations, checking for backwards compatability
+        df["extra_reward"] = (
+            (df["right_reward_type"] == "manual")
+            | (df["left_reward_type"] == "manual")
+            | (df["right_reward_type"] == "auto")
+            | (df["left_reward_type"] == "auto")
+        )
+    else:
+        df["extra_reward"] = (~df["earned_reward"]) & df["reward_time_in_session"].notnull()
 
     # Compute time of choice for each trials
     with warnings.catch_warnings():
@@ -438,10 +455,12 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     )
 
     # Filtering out choices greater than response window
-    slow_choice = (df["choice_time_in_trial"] > df["response_duration"]+TIMING_TOLERANCE) & (~df["earned_reward"])
+    slow_choice = (df["choice_time_in_trial"] > df["response_duration"] + TIMING_TOLERANCE) & (
+        ~df["earned_reward"]
+    )
     df.loc[slow_choice, "choice_time_in_session"] = np.nan
     df.loc[slow_choice, "choice_time_in_trial"] = np.nan
-    if np.sum(df["choice_time_in_trial"] > df["response_duration"]+TIMING_TOLERANCE) > 0:
+    if np.sum(df["choice_time_in_trial"] > df["response_duration"] + TIMING_TOLERANCE) > 0:
         warnings.warn("Response time greater than minimum, something unusual happened")
 
     # Sanity checks
@@ -455,11 +474,11 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     # assert np.all(
     #    rewarded_df["choice_time_in_session"] <= rewarded_df["reward_time_in_session"]
     # ), "Reward before choice time"
-    if not np.all(rewarded_df["choice_time_in_session"] <= rewarded_df["reward_time_in_session"]):
+    earned_rewarded_df = rewarded_df.query("not extra_reward")
+    if not np.all(
+        earned_rewarded_df["choice_time_in_session"] <= earned_rewarded_df["reward_time_in_session"]
+    ):
         warnings.warn("Reward before choice time. This is likely due to manual rewards")
-    # This check should exclude trials with manual water. 
-    # But it appears that "extra_reward" doesn't capture everything, probably because there is an edge
-    # case where you have BOTH a manual reward and an earned reward
     assert np.all(
         rewarded_df["choice_time_in_trial"] >= 0
     ), "Rewarded trial with negative choice_time_in_trial"
