@@ -31,7 +31,9 @@ dev = [
     'interrogate',
     'isort',
     'Sphinx',
-    'furo'
+    'furo',
+    'codeocean',
+    'aind-data-access-api'
 ]
 
 [tool.setuptools.packages.find]

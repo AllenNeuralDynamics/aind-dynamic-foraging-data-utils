@@ -15,11 +15,46 @@ import pandas as pd
 import requests
 from codeocean import CodeOcean
 from codeocean.data_asset import DataAssetAttachParams
+from aind_data_access_api.document_db import MetadataDbClient
 
 from aind_dynamic_foraging_data_utils import nwb_utils
 
 URL = "https://api.allenneuraldynamics-test.org/v1/behavior_analysis/mle_fitting"
 
+def get_subject_assets(subject_id, return_full=False):
+    '''
+        Returns the data asset IDs for a subject
+        return_full (bool) if True, return a pandas dataframe with all docdb info
+    '''
+   
+    # Create metadata client 
+    client = MetadataDbClient(
+        host='api.allenneuraldynamics.org',
+        database='metadata_index',
+        collection='data_assets'
+        )
+
+    # Query based on subject id
+    results = pd.DataFrame(client.retrieve_docdb_records(filter_query={
+        "name": {"$regex": "^behavior_{}_.*processed_.*$".format(subject_id)}
+        }))
+    
+    # look for duplicate entries, taking the last by processing time
+    results['session_name'] = [x.split('processed')[0] for x in results['name']]
+    results = results.sort_values(by='name')
+    results_no_duplicates = results.drop_duplicates(subset='session_name',keep=False)
+
+    # If there were duplicates, make a warning and print the duplicates
+    if len(results) != len(results_no_duplicates):
+        duplicated = results[results.duplicated(subset='session_name')]
+        warnings.warn('Duplicate session entries in docDB') 
+        for index, row in duplicated.iterrows():
+            print(row['name'])
+
+    if return_full:
+        return results 
+    else:
+        return results['_id'].values
 
 def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
     """
