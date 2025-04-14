@@ -21,7 +21,6 @@ dependencies = [
     'numpy',
     'pynwb',
     'hdmf_zarr',
-    'codeocean',
     'aind-data-access-api'
 ]
 
