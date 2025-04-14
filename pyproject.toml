@@ -32,7 +32,7 @@ dev = [
     'interrogate',
     'isort',
     'Sphinx',
-    'furo',
+    'furo'
 ]
 
 [tool.setuptools.packages.find]
