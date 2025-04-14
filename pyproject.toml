@@ -20,7 +20,9 @@ dependencies = [
     'pandas',
     'numpy',
     'pynwb',
-    'hdmf_zarr'
+    'hdmf_zarr',
+    'codeocean',
+    'aind-data-access-api'
 ]
 
 [project.optional-dependencies]
@@ -32,8 +34,6 @@ dev = [
     'isort',
     'Sphinx',
     'furo',
-    'codeocean',
-    'aind-data-access-api'
 ]
 
 [tool.setuptools.packages.find]
