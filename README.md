@@ -81,9 +81,9 @@ Then, you should be able to access the token via `os.getenv(token_name)`.
 
 To get a list of code ocean assets for a subject
 ```
-import aind_dynamic_foraging_data_utils.nwb_utils as nu
-results = nu.get_subject_assets(my_id)
-co_assets = nu.attach_data(results['_id'].values)
+import aind_dynamic_foraging_data_utils.code_ocean_utils as cou
+results = cou.get_subject_assets(my_id)
+co_assets = cou.attach_data(results['_id'].values)
 ```
 
 
