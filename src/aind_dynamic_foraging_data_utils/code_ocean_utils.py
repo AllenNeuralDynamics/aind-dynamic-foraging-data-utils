@@ -26,8 +26,10 @@ URL = "https://api.allenneuraldynamics-test.org/v1/behavior_analysis/mle_fitting
 
 def get_subject_assets(subject_id, processed=True):
     """
-    Returns the data asset IDs for a subject. If duplicate entries exist, take the last
+    Returns the docDB results for a subject. If duplicate entries exist, take the last
     based on processing time
+
+    subject_id (str or int) subject id to get assets for from docDB
     processed (bool) if True, look for processed assets. If False, look for raw assets
 
     Example
