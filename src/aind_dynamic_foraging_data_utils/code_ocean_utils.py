@@ -73,7 +73,7 @@ def get_subject_assets(subject_id, processed=True):
         duplicated = results[results.duplicated(subset="session_name", keep=False)]
         warnings.warn("Duplicate session entries in docDB")
         for index, row in duplicated.iterrows():
-            print(row["name"])
+            print("duplicated: {}".format(row["name"]))
 
     return results_no_duplicates
 
