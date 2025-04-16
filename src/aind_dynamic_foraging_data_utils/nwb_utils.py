@@ -1,7 +1,6 @@
 """
 Utility functions for processing dynamic foraging data.
     load_nwb_from_filename
-    unpack_metadata
     create_single_df_session_inner
     create_df_session
     create_single_df_session
@@ -10,10 +9,10 @@ Utility functions for processing dynamic foraging data.
     create_fib_df
 """
 
+import itertools
 import os
 import re
 import warnings
-import itertools
 
 import numpy as np
 import pandas as pd
@@ -22,6 +21,12 @@ from pynwb import NWBHDF5IO
 
 # If we adjust time_in_session, adjust it to this
 SESSION_ALIGNMENT = "goCue_start_time"
+
+# Tolerance for responses to be outside the response window
+RESPONSE_TIMING_TOLERANCE = 0.005
+
+# Tolerance for responses before the go cue
+CHOICE_TIMING_TOLERANCE = 0.005
 
 
 def load_nwb_from_filename(filename):
@@ -44,15 +49,6 @@ def load_nwb_from_filename(filename):
     else:
         # Assuming its already an NWB
         return filename
-
-
-def unpack_metadata(nwb):
-    """
-    Unpacks metadata as a dictionary attribute, instead of a Dynamic
-    table nested inside a dictionary
-    """
-    # TODO, this should be outdated once we fix the NWB files themselves
-    nwb.metadata = nwb.scratch["metadata"].to_dataframe().iloc[0].to_dict()
 
 
 def create_single_df_session_inner(nwb):
@@ -310,7 +306,7 @@ def create_single_df_session(nwb_filename):
     return df_session
 
 
-def create_df_trials(nwb_filename, adjust_time=True):
+def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     """
     Process nwb and create df_trials for every single session
 
@@ -396,12 +392,27 @@ def create_df_trials(nwb_filename, adjust_time=True):
         -1, fill_value=np.inf
     )
     drop_cols.append("next_goCue_start_time_in_session")
+
+    # Create column with CHOICE TIMING TOLERANCE
+    df["next_goCue_start_time_in_session_tolerance"] = (
+        df["next_goCue_start_time_in_session"] - CHOICE_TIMING_TOLERANCE
+    )
+    df["goCue_start_time_in_session_tolerance"] = (
+        df["goCue_start_time_in_session"] - CHOICE_TIMING_TOLERANCE
+    )
+    drop_cols.append("next_goCue_start_time_in_session_tolerance")
+    drop_cols.append("goCue_start_time_in_session_tolerance")
+
     for event in key_from_acq:
         event_times = events[event]
+        if event in ["left_lick_time", "right_lick_time"]:
+            times = "_tolerance"
+        else:
+            times = ""
         df[event] = df.apply(
             lambda x: event_times[
-                (event_times >= x["goCue_start_time_in_session"])
-                & (event_times < x["next_goCue_start_time_in_session"])
+                (event_times >= x["goCue_start_time_in_session" + times])
+                & (event_times < x["next_goCue_start_time_in_session" + times])
             ],
             axis=1,
         )
@@ -425,6 +436,29 @@ def create_df_trials(nwb_filename, adjust_time=True):
         df["reward_time_in_session"] - df[SESSION_ALIGNMENT + "_in_session"]
     )
 
+    # Add annotation of reward types
+    for event in ["right_reward_delivery_time", "left_reward_delivery_time"]:
+        times = events[event]
+        data = nwb.acquisition[event].data[:]
+        mapper = {x[0]: x[1] for x in zip(times, data)}
+        df[event.split("delivery_time")[0] + "type"] = [
+            mapper[x[0]] if len(x) > 0 else np.nan for x in df[event]
+        ]
+
+    # Compute boolean of whether animal was rewarded
+    # AutoWater and manual water is not included in earned_reward
+    df["earned_reward"] = df.rewarded_historyR | df.rewarded_historyL
+    if np.sum(df["right_reward_type"] == "earned") > 0:
+        # We have reward type annotations, checking for backwards compatability
+        df["extra_reward"] = (
+            (df["right_reward_type"] == "manual")
+            | (df["left_reward_type"] == "manual")
+            | (df["right_reward_type"] == "auto")
+            | (df["left_reward_type"] == "auto")
+        )
+    else:
+        df["extra_reward"] = (~df["earned_reward"]) & df["reward_time_in_session"].notnull()
+
     # Compute time of choice for each trials
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message="All-NaN slice encountered")
@@ -439,34 +473,32 @@ def create_df_trials(nwb_filename, adjust_time=True):
     )
 
     # Filtering out choices greater than response window
-    slow_choice = df["choice_time_in_trial"] > df["response_duration"]
+    slow_choice = (
+        df["choice_time_in_trial"] > df["response_duration"] + RESPONSE_TIMING_TOLERANCE
+    ) & (~df["earned_reward"])
     df.loc[slow_choice, "choice_time_in_session"] = np.nan
     df.loc[slow_choice, "choice_time_in_trial"] = np.nan
-
-    # Compute boolean of whether animal was rewarded
-    # AutoWater and manual water is not included in earned_reward
-    df["earned_reward"] = df.rewarded_historyR | df.rewarded_historyL
-    # TODO update this section once we have reliable labels for manual rewards
-    # See issue #54
-    df["extra_reward"] = (~df["earned_reward"]) & df["reward_time_in_session"].notnull()
+    if np.sum(df["choice_time_in_trial"] > df["response_duration"] + RESPONSE_TIMING_TOLERANCE) > 0:
+        warnings.warn("Response time greater than minimum, something unusual happened")
 
     # Sanity checks
     rewarded_df = df.query("earned_reward")
     assert (
         np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0
     ), "Rewarded trials without reward time"
+
     assert (
         np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0
     ), "Rewarded trials without choice time"
-    # assert np.all(
-    #    rewarded_df["choice_time_in_session"] <= rewarded_df["reward_time_in_session"]
-    # ), "Reward before choice time"
-    if not np.all(rewarded_df["choice_time_in_session"] <= rewarded_df["reward_time_in_session"]):
+
+    earned_df = rewarded_df.query("not extra_reward")
+    if not np.all(earned_df["choice_time_in_session"] <= earned_df["reward_time_in_session"]):
         warnings.warn("Reward before choice time. This is likely due to manual rewards")
-        # TODO, auto water can be delievered before choice time
+
     assert np.all(
-        rewarded_df["choice_time_in_trial"] >= 0
+        rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE
     ), "Rewarded trial with negative choice_time_in_trial"
+
     assert np.all(
         np.isnan(df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"])
     ), "Unrewarded trials with reward time"
@@ -475,18 +507,19 @@ def create_df_trials(nwb_filename, adjust_time=True):
     drop_cols += key_from_acq
     df = df.drop(columns=drop_cols)
 
-    if adjust_time:
+    if adjust_time and verbose:
         print(
             "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
         )
     return df
 
 
-def create_events_df(nwb_filename, adjust_time=True):
+def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     """
     returns a tidy dataframe of the events in the nwb file
 
     adjust_time (bool), set time of first goCue to t=0
+    verbose (bool), give warnings for adjustments
     """
 
     nwb = load_nwb_from_filename(nwb_filename)
@@ -570,14 +603,14 @@ def create_events_df(nwb_filename, adjust_time=True):
         assert np.isclose(gocues.iloc[0]["timestamps"], 0, rtol=0.01)
     # TODO, need more checks here for time alignment on trial index.
 
-    if adjust_time:
+    if adjust_time and verbose:
         print(
             "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
         )
     return df
 
 
-def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
+def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     """
     returns a dataframe of the FIB data in the nwb file
     if tidy, return a tidy dataframe
@@ -651,7 +684,7 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True):
     ses_idx = subject_id + "_" + session_date
     df["ses_idx"] = ses_idx
 
-    if adjust_time:
+    if adjust_time and verbose:
         print(
             "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
         )
