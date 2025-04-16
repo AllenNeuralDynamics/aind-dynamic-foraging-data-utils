@@ -1,11 +1,13 @@
 """
 Important utility functions for formatting the data
+    get_subject_assets
     attach_data
     get_all_df_for_nwb
 
     check_avail_model_by_nwb_name
     get_foraging_model_info
 """
+
 import json
 import os
 import warnings
@@ -15,10 +17,65 @@ import pandas as pd
 import requests
 from codeocean import CodeOcean
 from codeocean.data_asset import DataAssetAttachParams
+from aind_data_access_api.document_db import MetadataDbClient
 
 from aind_dynamic_foraging_data_utils import nwb_utils
 
 URL = "https://api.allenneuraldynamics-test.org/v1/behavior_analysis/mle_fitting"
+
+
+def get_subject_assets(subject_id, processed=True):
+    """
+    Returns the docDB results for a subject. If duplicate entries exist, take the last
+    based on processing time
+
+    subject_id (str or int) subject id to get assets for from docDB
+    processed (bool) if True, look for processed assets. If False, look for raw assets
+
+    Example
+    results = get_subject_assets(my_id)
+    co_assets = attach_data(results['_id'].values)
+    """
+
+    # Create metadata client
+    client = MetadataDbClient(
+        host="api.allenneuraldynamics.org", database="metadata_index", collection="data_assets"
+    )
+
+    # Query based on subject id
+    if processed:
+        results = pd.DataFrame(
+            client.retrieve_docdb_records(
+                filter_query={
+                    "name": {"$regex": "^behavior_{}_.*processed_[0-9-_]*$".format(subject_id)}
+                }
+            )
+        )
+    else:
+        results = pd.DataFrame(
+            client.retrieve_docdb_records(
+                filter_query={"name": {"$regex": "^behavior_{}_[0-9-_]*$".format(subject_id)}}
+            )
+        )
+
+    # If nothing is found, return
+    if len(results) == 0:
+        print("No results found for {}".format(subject_id))
+        return
+
+    # look for duplicate entries, taking the last by processing time
+    results["session_name"] = [x.split("_processed")[0] for x in results["name"]]
+    results = results.sort_values(by="name")
+    results_no_duplicates = results.drop_duplicates(subset="session_name", keep="last")
+
+    # If there were duplicates, make a warning and print the duplicates
+    if len(results) != len(results_no_duplicates):
+        duplicated = results[results.duplicated(subset="session_name", keep=False)]
+        warnings.warn("Duplicate session entries in docDB")
+        for index, row in duplicated.iterrows():
+            print("duplicated: {}".format(row["name"]))
+
+    return results_no_duplicates
 
 
 def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):

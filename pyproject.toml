@@ -20,7 +20,8 @@ dependencies = [
     'pandas',
     'numpy',
     'pynwb',
-    'hdmf_zarr'
+    'hdmf_zarr',
+    'aind-data-access-api'
 ]
 
 [project.optional-dependencies]
