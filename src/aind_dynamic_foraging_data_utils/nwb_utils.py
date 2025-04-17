@@ -525,7 +525,7 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     nwb = load_nwb_from_filename(nwb_filename)
 
     # Build list of all event types in acqusition, ignore FIP events
-    event_types = set(nwb.processing.keys())
+    event_types = set(nwb.processing['fiber_photometry'].data_interfaces.keys())
     channels = ["G", "R", "Iso"]
     fibers = ["0", "1", "2", "3"]
     methods = [
@@ -556,8 +556,8 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     events = []
     for e in event_types:
         # For each event, get timestamps, data, and label
-        raw_stamps = nwb.acquisition[e].timestamps[:]
-        data = nwb.acquisition[e].data[:]
+        raw_stamps = nwb.processing['fiber_photometry'].data_interfaces[e].timestamps[:]
+        data = nwb.processing['fiber_photometry'].data_interfaces[e].data[:]
         labels = [e] * len(data)
         stamps = raw_stamps - t0
         df = pd.DataFrame(
@@ -621,7 +621,7 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     nwb = load_nwb_from_filename(nwb_filename)
 
     # Build list of all FIB events in NWB file
-    nwb_types = set(nwb.processing.keys())
+    nwb_types = set(nwb.processing['fiber_photometry'].data_interfaces.keys())
     channels = ["G", "R", "Iso"]
     fibers = ["0", "1", "2", "3"]
     methods = [
@@ -656,8 +656,8 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     events = []
     for e in event_types:
         # For each event, get timestamps, data, and label
-        raw_stamps = nwb.acquisition[e].timestamps[:]
-        data = nwb.acquisition[e].data[:]
+        raw_stamps = nwb.processing['fiber_photometry'].data_interfaces[e].timestamps[:]
+        data = nwb.processing['fiber_photometry'].data_interfaces[e].data[:]
         labels = [e] * len(data)
         stamps = raw_stamps - t0
         df = pd.DataFrame(
