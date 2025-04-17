@@ -83,9 +83,9 @@ To get a list of code ocean assets for a subject
 ```
 import aind_dynamic_foraging_data_utils.code_ocean_utils as cou
 results = cou.get_subject_assets(my_id)
-co_assets = cou.attach_data(results['_id'].values)
 ```
 
+The 'external links' column gives you the data asset ID's. 
 
 To attach a long list of data, simply call 
 
