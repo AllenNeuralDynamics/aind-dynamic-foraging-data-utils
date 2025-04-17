@@ -525,11 +525,10 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     nwb = load_nwb_from_filename(nwb_filename)
 
     # Build list of all event types in acqusition, ignore FIP events
-    event_types = set(nwb.acquisition.keys())
+    event_types = set(nwb.processing.keys())
     channels = ["G", "R", "Iso"]
-    fibers = ["0", "1", "2", "3", "4"]
+    fibers = ["0", "1", "2", "3"]
     methods = [
-        "",
         "dff-bright",
         "dff-exp",
         "dff-poly",
@@ -622,11 +621,10 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     nwb = load_nwb_from_filename(nwb_filename)
 
     # Build list of all FIB events in NWB file
-    nwb_types = set(nwb.acquisition.keys())
+    nwb_types = set(nwb.processing.keys())
     channels = ["G", "R", "Iso"]
-    fibers = ["0", "1", "2", "3", "4"]
+    fibers = ["0", "1", "2", "3"]
     methods = [
-        "",
         "dff-bright",
         "dff-exp",
         "dff-poly",
