@@ -533,9 +533,9 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
         "dff-bright",
         "dff-exp",
         "dff-poly",
-        "preprocessed-bright",
-        "preprocessed-exp",
-        "preprocessed-poly",
+        "dff-bright_mc-iso-IRLS",
+        "dff-exp_mc-iso-IRLS",
+        "dff-poly_mc-iso-IRLS",
     ]
     ignore_types = set(
         [
@@ -630,9 +630,9 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
         "dff-bright",
         "dff-exp",
         "dff-poly",
-        "preprocessed-bright",
-        "preprocessed-exp",
-        "preprocessed-poly",
+        "dff-bright_mc-iso-IRLS",
+        "dff-exp_mc-iso-IRLS",
+        "dff-poly_mc-iso-IRLS",
     ]
     event_types = set(
         [
