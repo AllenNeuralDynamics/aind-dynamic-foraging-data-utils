@@ -527,7 +527,7 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     # Build list of all event types in acqusition, ignore FIP events
     event_types_v0 = set(nwb.acquisition.keys())
     event_types_v1 = set(nwb.processing['fiber_photometry'].data_interfaces.keys())
-    event_types = np.unique(np.concatenate(event_types_v0, event_types_v1))
+    event_types = event_types_v0.union(event_types_v1)
     
     channels = ["G", "R", "Iso"]
     fibers = ["0", "1", "2", "3", "4"]
@@ -630,7 +630,7 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     # Build list of all FIB events in NWB file
     nwb_types_v0 = set(nwb.acquisition.keys())
     nwb_types_v1 = set(nwb.processing['fiber_photometry'].data_interfaces.keys())
-    nwb_types = np.unique(np.concatenate((nwb_types_v0, nwb_types_v1)))
+    nwb_types = nwb_types_v0.union(nwb_types_v1)
     
     methods_v0 = [
         "",
