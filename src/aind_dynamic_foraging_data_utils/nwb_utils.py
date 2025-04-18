@@ -686,20 +686,16 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     events = []
     for e in event_types:
         # For each event, get timestamps, data, and label
-        e_strs = e.split('_')[2:]
-        if len(e_strs)>1:
-            e_type = "_".join(e_strs)
-        elif len(e_strs)==0:
-            e_type = ""
-        else:
-            e_type = e_strs[0]
-        
-        if e_type in methods_v0 and e_type not in methods_v1:
+        if len(nwb.processing)==0:
             raw_stamps = nwb.acquisition[e].timestamps[:]
             data = nwb.acquisition[e].data[:]
-        elif e_type in methods_v1 and e_type not in methods_v0:
-            raw_stamps = nwb.processing['fiber_photometry'].data_interfaces[e].timestamps[:]
-            data = nwb.processing['fiber_photometry'].data_interfaces[e].data[:]
+        else:
+            if e.split('_')[2:]==0:
+                raw_stamps = nwb.acquisition[e].timestamps[:]
+                data = nwb.acquisition[e].data[:]
+            else:
+                raw_stamps = nwb.processing['fiber_photometry'].data_interfaces[e].timestamps[:]
+                data = nwb.processing['fiber_photometry'].data_interfaces[e].data[:]
             
         labels = [e] * len(data)
         stamps = raw_stamps - t0
