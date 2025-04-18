@@ -689,7 +689,7 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
             e_type = e_strs[0]
         print (e_type)
         
-        if e_type in methods_v0:
+        if e_type in methods_v0 and e_type not in methods_v1:
             raw_stamps = nwb.acquisition[e].timestamps[:]
             data = nwb.acquisition[e].data[:]
         elif e_type in methods_v1:
