@@ -562,7 +562,7 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     events = []
     for e in event_types:
     # For each event, get timestamps, data, and label
-        if e in event_types_v0 and e not in event_types_v1:
+        if e in event_types_v0:
             raw_stamps = nwb.acquisition[e].timestamps[:]
             data = nwb.acquisition[e].data[:]
         elif e in event_types_v1 and e not in event_types_v0:
