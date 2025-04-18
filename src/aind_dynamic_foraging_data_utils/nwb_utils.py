@@ -690,7 +690,7 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
             raw_stamps = nwb.acquisition[e].timestamps[:]
             data = nwb.acquisition[e].data[:]
         else:
-            if len(e.split('_')[2:])==0:
+            if len(e.split('_')[2:])==0 | e == "FIP_falling_time" | e == "FIP_rising_time":
                 raw_stamps = nwb.acquisition[e].timestamps[:]
                 data = nwb.acquisition[e].data[:]
             else:
