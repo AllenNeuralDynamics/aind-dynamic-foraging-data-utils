@@ -525,17 +525,22 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     nwb = load_nwb_from_filename(nwb_filename)
 
     # Build list of all event types in acqusition, ignore FIP events
-    event_types = set(nwb.acquisition.keys())
+    event_types_v0 = set(nwb.acquisition.keys())
+    if len(nwb.processing)!=0:
+        event_types_v1 = set(nwb.processing['fiber_photometry'].data_interfaces.keys())
+        event_types = event_types_v0.union(event_types_v1)
+    else:
+        event_types = event_types_v0
+    
     channels = ["G", "R", "Iso"]
     fibers = ["0", "1", "2", "3", "4"]
     methods = [
-        "",
         "dff-bright",
         "dff-exp",
         "dff-poly",
-        "preprocessed-bright",
-        "preprocessed-exp",
-        "preprocessed-poly",
+        "dff-bright_mc-iso-IRLS",
+        "dff-exp_mc-iso-IRLS",
+        "dff-poly_mc-iso-IRLS",
     ]
     ignore_types = set(
         [
@@ -556,9 +561,13 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     # Iterate over event types and build a dataframe of each
     events = []
     for e in event_types:
-        # For each event, get timestamps, data, and label
-        raw_stamps = nwb.acquisition[e].timestamps[:]
-        data = nwb.acquisition[e].data[:]
+    # For each event, get timestamps, data, and label
+        if e in event_types_v0:
+            raw_stamps = nwb.acquisition[e].timestamps[:]
+            data = nwb.acquisition[e].data[:]
+        elif e in event_types_v1 and e not in event_types_v0:
+            raw_stamps = nwb.processing['fiber_photometry'].data_interfaces[e].timestamps[:]
+            data = nwb.processing['fiber_photometry'].data_interfaces[e].data[:]
         labels = [e] * len(data)
         stamps = raw_stamps - t0
         df = pd.DataFrame(
@@ -622,10 +631,14 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     nwb = load_nwb_from_filename(nwb_filename)
 
     # Build list of all FIB events in NWB file
-    nwb_types = set(nwb.acquisition.keys())
-    channels = ["G", "R", "Iso"]
-    fibers = ["0", "1", "2", "3", "4"]
-    methods = [
+    nwb_types_v0 = set(nwb.acquisition.keys())
+    if len(nwb.processing) != 0:
+        nwb_types_v1 = set(nwb.processing['fiber_photometry'].data_interfaces.keys())
+        nwb_types = nwb_types_v0.union(nwb_types_v1)
+    else:
+        nwb_types = nwb_types_v0
+    
+    methods_v0 = [
         "",
         "dff-bright",
         "dff-exp",
@@ -634,6 +647,21 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
         "preprocessed-exp",
         "preprocessed-poly",
     ]
+    
+    methods_v1 = [
+        "dff-bright",
+        "dff-exp",
+        "dff-poly",
+        "dff-bright_mc-iso-IRLS",
+        "dff-exp_mc-iso-IRLS",
+        "dff-poly_mc-iso-IRLS",
+    ]
+
+    methods = np.unique(np.concatenate((methods_v0, methods_v1)))
+
+    channels = ["G", "R", "Iso"]
+    fibers = ["0", "1", "2", "3", "4"]
+    
     event_types = set(
         [
             x[0] + "_" + x[1] + "_" + x[2] if len(x[2]) > 0 else x[0] + "_" + x[1]
@@ -658,8 +686,17 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     events = []
     for e in event_types:
         # For each event, get timestamps, data, and label
-        raw_stamps = nwb.acquisition[e].timestamps[:]
-        data = nwb.acquisition[e].data[:]
+        if len(nwb.processing)==0:
+            raw_stamps = nwb.acquisition[e].timestamps[:]
+            data = nwb.acquisition[e].data[:]
+        else:
+            if len(e.split('_')[2:])==0 or e == "FIP_falling_time" or e == "FIP_rising_time":
+                raw_stamps = nwb.acquisition[e].timestamps[:]
+                data = nwb.acquisition[e].data[:]
+            else:
+                raw_stamps = nwb.processing['fiber_photometry'].data_interfaces[e].timestamps[:]
+                data = nwb.processing['fiber_photometry'].data_interfaces[e].data[:]
+            
         labels = [e] * len(data)
         stamps = raw_stamps - t0
         df = pd.DataFrame(
