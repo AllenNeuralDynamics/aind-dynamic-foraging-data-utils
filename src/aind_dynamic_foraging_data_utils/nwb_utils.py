@@ -682,7 +682,7 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
         # For each event, get timestamps, data, and label
         e_strs = e.split('_')[2:]
         if len(e_strs)>1:
-            e_type = "".join(e_strs)
+            e_type = "_".join(e_strs)
         elif len(e_strs)==0:
             e_type = ""
         else:
