@@ -9,7 +9,6 @@ Utility functions for processing dynamic foraging data.
     create_fib_df
 """
 
-import itertools
 import os
 import re
 import warnings
@@ -524,14 +523,9 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
 
     nwb = load_nwb_from_filename(nwb_filename)
 
-    # Build list of all event types in acqusition, ignore FIP events
+    # Build list of all event types in acqusition, ignore FIP events (no need for processing folder)
     event_types = set(nwb.acquisition.keys())
-    # if len(nwb.processing)!=0:
-    #     event_types_v1 = set(nwb.processing['fiber_photometry'].data_interfaces.keys())
-    #     event_types = event_types_v0.union(event_types_v1)
-    # else:
-    #     event_types = event_types_v0
-    
+
     channels = ["G", "R", "Iso"]
     fibers = ["0", "1", "2", "3", "4"]
     FIP_prefixes = [f"{c}_{f}" for c in channels for f in fibers]
@@ -553,7 +547,7 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     # Iterate over event types and build a dataframe of each
     events = []
     for e in event_types:
-    # For each event, get timestamps, data, and label
+        # For each event, get timestamps, data, and label
         raw_stamps = nwb.acquisition[e].timestamps[:]
         data = nwb.acquisition[e].data[:]
         labels = [e] * len(data)
@@ -622,10 +616,9 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     nwb_data = nwb.acquisition
     if len(nwb.processing):
         nwb_data = nwb.acquisition | nwb.processing['fiber_photometry'].data_interfaces
-    
+
     event_types = set(nwb_data.keys())
 
-    
     channels = ["G", "R", "Iso"]
     fibers = ["0", "1", "2", "3", "4"]
     FIP_prefixes = [f"{c}_{f}" for c in channels for f in fibers]
@@ -638,7 +631,6 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
 
     event_types.add("FIP_falling_time")
     event_types.add("FIP_rising_time")
-
 
     # If no FIB data available
     if len(event_types) == 0:
@@ -655,7 +647,7 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     for e in event_types:
         # For each event, get timestamps, data, and label
         raw_stamps = nwb_data[e].timestamps[:]
-        data = nwb_data[e].data[:]  
+        data = nwb_data[e].data[:]
         labels = [e] * len(data)
         stamps = raw_stamps - t0
         df = pd.DataFrame(
