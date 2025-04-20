@@ -525,32 +525,24 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     nwb = load_nwb_from_filename(nwb_filename)
 
     # Build list of all event types in acqusition, ignore FIP events
-    event_types_v0 = set(nwb.acquisition.keys())
-    if len(nwb.processing)!=0:
-        event_types_v1 = set(nwb.processing['fiber_photometry'].data_interfaces.keys())
-        event_types = event_types_v0.union(event_types_v1)
-    else:
-        event_types = event_types_v0
+    event_types = set(nwb.acquisition.keys())
+    # if len(nwb.processing)!=0:
+    #     event_types_v1 = set(nwb.processing['fiber_photometry'].data_interfaces.keys())
+    #     event_types = event_types_v0.union(event_types_v1)
+    # else:
+    #     event_types = event_types_v0
     
     channels = ["G", "R", "Iso"]
     fibers = ["0", "1", "2", "3", "4"]
-    methods = [
-        "dff-bright",
-        "dff-exp",
-        "dff-poly",
-        "dff-bright_mc-iso-IRLS",
-        "dff-exp_mc-iso-IRLS",
-        "dff-poly_mc-iso-IRLS",
-    ]
-    ignore_types = set(
-        [
-            x[0] + "_" + x[1] + "_" + x[2] if len(x[2]) > 0 else x[0] + "_" + x[1]
-            for x in list(itertools.product(channels, fibers, methods))
-        ]
-    )
-    ignore_types.add("FIP_falling_time")
-    ignore_types.add("FIP_rising_time")
-    event_types -= ignore_types
+    prefixes_to_ignore = [f"{c}_{f}" for c in channels for f in fibers]
+
+    # Filter out all fibers
+    event_types = {
+        k for k in event_types
+        if not any(k.startswith(prefix) for prefix in prefixes_to_ignore)
+    }
+
+    event_types -= {"FIP_falling_time", "FIP_rising_time"}
 
     # Determine time 0 as first go Cue
     if adjust_time:
@@ -562,12 +554,8 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     events = []
     for e in event_types:
     # For each event, get timestamps, data, and label
-        if e in event_types_v0:
-            raw_stamps = nwb.acquisition[e].timestamps[:]
-            data = nwb.acquisition[e].data[:]
-        elif e in event_types_v1 and e not in event_types_v0:
-            raw_stamps = nwb.processing['fiber_photometry'].data_interfaces[e].timestamps[:]
-            data = nwb.processing['fiber_photometry'].data_interfaces[e].data[:]
+        raw_stamps = nwb.acquisition[e].timestamps[:]
+        data = nwb.acquisition[e].data[:]
         labels = [e] * len(data)
         stamps = raw_stamps - t0
         df = pd.DataFrame(
