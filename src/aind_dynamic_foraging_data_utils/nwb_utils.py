@@ -9,7 +9,6 @@ Utility functions for processing dynamic foraging data.
     create_fib_df
 """
 
-import itertools
 import os
 import re
 import warnings
@@ -524,28 +523,20 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
 
     nwb = load_nwb_from_filename(nwb_filename)
 
-    # Build list of all event types in acqusition, ignore FIP events
+    # Build list of all event types in acqusition, ignore FIP events (no need for processing folder)
     event_types = set(nwb.acquisition.keys())
+
     channels = ["G", "R", "Iso"]
     fibers = ["0", "1", "2", "3", "4"]
-    methods = [
-        "",
-        "dff-bright",
-        "dff-exp",
-        "dff-poly",
-        "preprocessed-bright",
-        "preprocessed-exp",
-        "preprocessed-poly",
-    ]
-    ignore_types = set(
-        [
-            x[0] + "_" + x[1] + "_" + x[2] if len(x[2]) > 0 else x[0] + "_" + x[1]
-            for x in list(itertools.product(channels, fibers, methods))
-        ]
-    )
-    ignore_types.add("FIP_falling_time")
-    ignore_types.add("FIP_rising_time")
-    event_types -= ignore_types
+    FIP_prefixes = [f"{c}_{f}" for c in channels for f in fibers]
+
+    # Filter out all fibers
+    event_types = {
+        k for k in event_types
+        if not any(k.startswith(prefix) for prefix in FIP_prefixes)
+    }
+
+    event_types -= {"FIP_falling_time", "FIP_rising_time"}
 
     # Determine time 0 as first go Cue
     if adjust_time:
@@ -622,27 +613,24 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     nwb = load_nwb_from_filename(nwb_filename)
 
     # Build list of all FIB events in NWB file
-    nwb_types = set(nwb.acquisition.keys())
+    nwb_data = nwb.acquisition
+    if len(nwb.processing):
+        nwb_data = nwb.acquisition | nwb.processing['fiber_photometry'].data_interfaces
+
+    event_types = set(nwb_data.keys())
+
     channels = ["G", "R", "Iso"]
     fibers = ["0", "1", "2", "3", "4"]
-    methods = [
-        "",
-        "dff-bright",
-        "dff-exp",
-        "dff-poly",
-        "preprocessed-bright",
-        "preprocessed-exp",
-        "preprocessed-poly",
-    ]
-    event_types = set(
-        [
-            x[0] + "_" + x[1] + "_" + x[2] if len(x[2]) > 0 else x[0] + "_" + x[1]
-            for x in list(itertools.product(channels, fibers, methods))
-        ]
-    )
+    FIP_prefixes = [f"{c}_{f}" for c in channels for f in fibers]
+
+    # Filter out all fibers
+    event_types = {
+        k for k in event_types
+        if any(k.startswith(prefix) for prefix in FIP_prefixes)
+    }
+
     event_types.add("FIP_falling_time")
     event_types.add("FIP_rising_time")
-    event_types = event_types.intersection(nwb_types)
 
     # If no FIB data available
     if len(event_types) == 0:
@@ -658,8 +646,8 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     events = []
     for e in event_types:
         # For each event, get timestamps, data, and label
-        raw_stamps = nwb.acquisition[e].timestamps[:]
-        data = nwb.acquisition[e].data[:]
+        raw_stamps = nwb_data[e].timestamps[:]
+        data = nwb_data[e].data[:]
         labels = [e] * len(data)
         stamps = raw_stamps - t0
         df = pd.DataFrame(
