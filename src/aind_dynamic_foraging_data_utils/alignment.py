@@ -438,15 +438,42 @@ def event_triggered_response(  # noqa C901
                 # a value that includes an array that represents the
                 # sliced data around the current event, interpolated
                 # on the linearly spaced time array
+                # USING AVERAGE INSTEAD OF INTERP 
+
+                rel_time = data_slice.index - event_time
+
+                # Step 2: Define bin edges based on shared time base
+                dt = 1.0 / output_sampling_rate
+                bin_edges = np.append(t_array - dt/2, t_array[-1] + dt/2)
+
+                # Assign each value to a bin
+                binned_time = pd.cut(rel_time, bins=bin_edges, labels=t_array, right=True)
+
+                # Create a DataFrame for grouping
+                binned_df = pd.DataFrame({
+                    'time_bin': binned_time,
+                    'value': data_slice.values
+                })
+
+                # Compute the mean within each bin
+                binned_avg = binned_df.groupby('time_bin')['value'].mean()
+
+
                 data_dict.update(
                     {
-                        "event_{}_t={}".format(event_number, event_time): np.interp(
-                            data_dict["time"],
-                            data_slice.index - event_time,
-                            data_slice.values,
-                        )
+                        "event_{}_t={}".format(event_number, event_time): binned_avg.values
                     }
                 )
+
+                # data_dict.update(
+                #     {
+                #         "event_{}_t={}".format(event_number, event_time): np.interp(
+                #             data_dict["time"],
+                #             data_slice.index - event_time,
+                #             data_slice.values,
+                #         )
+                #     }
+                # )
 
         # define a wide dataframe as a dataframe of the above compiled dictionary  # NOQA E501
         wide_etr = pd.DataFrame(data_dict)
