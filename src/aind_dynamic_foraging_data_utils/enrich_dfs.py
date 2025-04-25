@@ -77,13 +77,15 @@ def enrich_df_trials_fm(df_trials_fm):
                 df_ses.loc[:,['RPE_all']] = (df_ses['earned_reward'].astype(float) + df_ses['extra_reward'].astype(float)) - chosen_values
                 df_ses.loc[pd.isna(df_ses['choice']), 'RPE_earned'] = np.nan
                 df_ses.loc[pd.isna(df_ses['choice']), 'RPE_all'] = np.nan
+
+
                 # df_ses.loc[:,['licks_chosen']] = chosen_licks
 
             df_trials_fm_enriched = pd.concat([df_trials_fm_enriched, df_ses], axis=0)
         return df_trials_fm_enriched
 
 
-def get_df_fip_trials(input_obj, offsets=[-1, 1]):
+def get_df_fip_trials(input_obj, offsets=[-1, 1], alignment_events = ['goCue_start_time_in_trial', 'stop_time_in_trial']):
     """
     Processes df_fip and df_trials, computing z-scored data and aligning timestamps.
 
@@ -104,7 +106,7 @@ def get_df_fip_trials(input_obj, offsets=[-1, 1]):
     # zscore data
 
     if 'data_z' not in df_fip.columns:
-        df_fip.loc[:,'data_z'] = df_fip.groupby(['ses_idx', 'event'])['data'].transform(lambda x: zscore(x, nan_policy='omit'))
+        df_fip.loc[:,'data_z'] = df_fip.groupby(['ses_idx', 'event'])['data'].transform(lambda x: zscore(x, ddof = 1, nan_policy='omit'))
 
 
     for (ses_idx, event), df_fip_i in df_fip.groupby(['ses_idx', 'event']):
@@ -115,7 +117,7 @@ def get_df_fip_trials(input_obj, offsets=[-1, 1]):
             continue
 
         timepoints = df_fip_i['timestamps'].values
-        alignment_events = ['goCue_start_time_in_trial', 'stop_time_in_trial']
+        
 
         absolute_time = 'goCue_start_time_in_session'
 
