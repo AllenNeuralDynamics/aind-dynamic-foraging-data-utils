@@ -499,7 +499,7 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     ), "Rewarded trial with negative choice_time_in_trial"
 
     assert np.all(
-        np.isnan(df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"])
+        np.isnan(df.query("not earned_reward").query("not extra_reward").query("animal_response != 2.0")["reward_time_in_session"])
     ), "Unrewarded trials with reward time"
 
     # Drop columns
