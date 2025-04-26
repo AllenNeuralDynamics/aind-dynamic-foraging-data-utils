@@ -47,14 +47,18 @@ def get_subject_assets(subject_id, processed=True):
         results = pd.DataFrame(
             client.retrieve_docdb_records(
                 filter_query={
-                    "name": {"$regex": "^behavior_{}_.*processed_[0-9-_]*$".format(subject_id)}
+                    "name": {"$regex": "^behavior_{}_.*processed_[0-9-_]*$".format(subject_id)},
+                    "session.session_type" : { "$ne":"PavlovianConditioning" },
+
                 }
             )
         )
     else:
         results = pd.DataFrame(
             client.retrieve_docdb_records(
-                filter_query={"name": {"$regex": "^behavior_{}_[0-9-_]*$".format(subject_id)}}
+                filter_query={"name": {"$regex": "^behavior_{}_[0-9-_]*$".format(subject_id)}, 
+                            "session.session_type" : { "$ne":"PavlovianConditioning" },
+                            }
             )
         )
 
