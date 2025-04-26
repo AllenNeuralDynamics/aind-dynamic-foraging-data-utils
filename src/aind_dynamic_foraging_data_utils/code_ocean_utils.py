@@ -27,7 +27,7 @@ URL = "https://api.allenneuraldynamics-test.org/v1/behavior_analysis/mle_fitting
 def get_subject_assets(subject_id, processed=True):
     """
     Returns the docDB results for a subject. If duplicate entries exist, take the last
-    based on processing time
+    based on processing time. Skips pavlovian task.
 
     subject_id (str or int) subject id to get assets for from docDB
     processed (bool) if True, look for processed assets. If False, look for raw assets
@@ -48,17 +48,17 @@ def get_subject_assets(subject_id, processed=True):
             client.retrieve_docdb_records(
                 filter_query={
                     "name": {"$regex": "^behavior_{}_.*processed_[0-9-_]*$".format(subject_id)},
-                    "session.session_type" : { "$ne":"PavlovianConditioning" },
-
+                    "session.session_type": {"$ne": "PavlovianConditioning"},
                 }
             )
         )
     else:
         results = pd.DataFrame(
             client.retrieve_docdb_records(
-                filter_query={"name": {"$regex": "^behavior_{}_[0-9-_]*$".format(subject_id)}, 
-                            "session.session_type" : { "$ne":"PavlovianConditioning" },
-                            }
+                filter_query={
+                    "name": {"$regex": "^behavior_{}_[0-9-_]*$".format(subject_id)},
+                    "session.session_type": {"$ne": "PavlovianConditioning"},
+                }
             )
         )
 
@@ -155,10 +155,14 @@ def get_all_df_for_nwb(filename_sessions, loc="../scratch/", interested_channels
         df_session = nwb_utils.create_df_session(nwb)
         df_session["ses_idx"] = ses_idx
 
-        # trials
-        df_ses_trials = nwb_utils.create_df_trials(nwb)
-        df_ses_trials["ses_idx"] = ses_idx
-        df_trials = pd.concat([df_trials, df_ses_trials], axis=0)
+        try:
+            # trials
+            df_ses_trials = nwb_utils.create_df_trials(nwb)
+            df_ses_trials["ses_idx"] = ses_idx
+            df_trials = pd.concat([df_trials, df_ses_trials], axis=0)
+        except AssertionError as e:
+            print(f"Skipping {ses_idx} due to assertion error: {e}")
+            continue  # move to the next mouse
 
         # FIP
         df_ses_fip = nwb_utils.create_fib_df(nwb, tidy=True)
@@ -184,7 +188,7 @@ def get_all_df_for_nwb(filename_sessions, loc="../scratch/", interested_channels
         # correct fix is lickspout_y == lickspout_y1 == lickspout_y2
         # and always have lickspout_y1,y2.
         # I will fix this at a later date.... code to fix this is below
-        df_trials = df_trials.reset_index()
+        df_trials = df_trials.reset_index(drop=True)
         df_trials.to_csv(loc + "df_trials.csv", index=False)
 
 
