@@ -155,6 +155,7 @@ def get_all_df_for_nwb(filename_sessions, loc="../scratch/", interested_channels
         df_session = nwb_utils.create_df_session(nwb)
         df_session["ses_idx"] = ses_idx
 
+        # trials
         df_ses_trials = nwb_utils.create_df_trials(nwb)
         df_ses_trials["ses_idx"] = ses_idx
         df_trials = pd.concat([df_trials, df_ses_trials], axis=0)
