@@ -575,11 +575,11 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
     # Add trial index for each event
-    trial_starts = nwb.trials.start_time[:] - t0
-    last_stop = nwb.trials.stop_time[-1] - t0
+    trial_starts = nwb.trials.goCue_start_time[:] - t0
+    last_stop = np.inf
     trial_index = []
     for index, e in df.iterrows():
-        starts = np.where(e.timestamps > trial_starts)[0]
+        starts = np.where(e.timestamps >= trial_starts)[0]
         if len(starts) == 0:
             trial_index.append(-1)
         elif e.timestamps > last_stop:
