@@ -422,15 +422,16 @@ def event_triggered_response(  # noqa C901
                         data_slice.index.values, x_data.index.values, x_data.values
                     )
 
-                    # Add to data dict as normal
+                    interpolated = np.interp(
+                        data_dict["time"],
+                        data_slice.index - event_time,
+                        data_slice.values,
+                    )
+                    # Screen for extrapolation points
+                    interpolated[data_dict["time"] < np.min(data_slice.index - event_time)] = np.nan
+                    interpolated[data_dict["time"] > np.max(data_slice.index - event_time)] = np.nan
                     data_dict.update(
-                        {
-                            "event_{}_t={}".format(event_number, event_time): np.interp(
-                                data_dict["time"],
-                                data_slice.index - event_time,
-                                data_slice.values,
-                            )
-                        }
+                        {"event_{}_t={}".format(event_number, event_time): interpolated}
                     )
             else:
                 # update our dictionary to have a new key defined as
@@ -438,15 +439,15 @@ def event_triggered_response(  # noqa C901
                 # a value that includes an array that represents the
                 # sliced data around the current event, interpolated
                 # on the linearly spaced time array
-                data_dict.update(
-                    {
-                        "event_{}_t={}".format(event_number, event_time): np.interp(
-                            data_dict["time"],
-                            data_slice.index - event_time,
-                            data_slice.values,
-                        )
-                    }
+                interpolated = np.interp(
+                    data_dict["time"],
+                    data_slice.index - event_time,
+                    data_slice.values,
                 )
+                # Screen for extrapolation points
+                interpolated[data_dict["time"] < np.min(data_slice.index - event_time)] = np.nan
+                interpolated[data_dict["time"] > np.max(data_slice.index - event_time)] = np.nan
+                data_dict.update({"event_{}_t={}".format(event_number, event_time): interpolated})
 
         # define a wide dataframe as a dataframe of the above compiled dictionary  # NOQA E501
         wide_etr = pd.DataFrame(data_dict)
