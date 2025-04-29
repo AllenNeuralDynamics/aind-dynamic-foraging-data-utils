@@ -42,13 +42,22 @@ def get_subject_assets(subject_id, processed=True):
         host="api.allenneuraldynamics.org", database="metadata_index", collection="data_assets"
     )
 
+    task_filter = {
+        "$or": [
+            {"session": None},
+            {
+                "session": {"$exists": True, "$ne": None},
+                "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting$"}
+            }
+        ]
+    }
     # Query based on subject id
     if processed:
         results = pd.DataFrame(
             client.retrieve_docdb_records(
                 filter_query={
                     "name": {"$regex": "^behavior_{}_.*processed_[0-9-_]*$".format(subject_id)},
-                    "session.session_type": {"$ne": "PavlovianConditioning"},
+                    **task_filter
                 }
             )
         )
@@ -57,7 +66,7 @@ def get_subject_assets(subject_id, processed=True):
             client.retrieve_docdb_records(
                 filter_query={
                     "name": {"$regex": "^behavior_{}_[0-9-_]*$".format(subject_id)},
-                    "session.session_type": {"$ne": "PavlovianConditioning"},
+                    **task_filter
                 }
             )
         )
