@@ -383,13 +383,16 @@ def event_triggered_response(  # noqa C901
         )
         data_dict = {"time": t_array}
 
+        # Add one extra timestep in the data outside the t_window
+        dt = np.diff(data[t].values).mean()
+
         # iterate over all event times
         data_reindexed = data.set_index(t, inplace=False)
 
         for event_number, event_time in enumerate(np.array(event_times)):
             # get a slice of the input data surrounding each event time
             data_slice = data_reindexed[y].loc[
-                event_time + t_start : event_time + t_end
+                event_time + t_start - dt : event_time + t_end + dt
             ]  # noqa: E501
 
             # if the slice is empty, we will fill it with NaNs
