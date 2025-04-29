@@ -384,6 +384,8 @@ def event_triggered_response(  # noqa C901
         data_dict = {"time": t_array}
 
         # Add one extra timestep in the data outside the t_window
+        # this ensures we are not extrapolating at the edge of t_window
+        # and instead doing interpolation.
         dt = np.diff(data[t].values).mean()
 
         # iterate over all event times
