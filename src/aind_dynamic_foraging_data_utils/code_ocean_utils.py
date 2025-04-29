@@ -47,7 +47,7 @@ def get_subject_assets(subject_id, processed=True):
             {"session": None},
             {
                 "session": {"$exists": True, "$ne": None},
-                "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting$"}
+                "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"}
             }
         ]
     }
