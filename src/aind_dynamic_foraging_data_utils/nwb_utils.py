@@ -344,6 +344,7 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     # Adjust for gaps in trial start/stop, and use the last stop time
     last_stop = df.iloc[-1]["stop_time"]
     df["stop_time"] = df["start_time"].shift(-1, fill_value=last_stop)
+    df = df.rename(columns={"start_time": "bonsai_start_time", "stop_time": "bonsai_stop_time"})
 
     # We skip these columns because they are how long the valve is open
     # not the times at which the valves were opened
@@ -532,8 +533,7 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
 
     # Filter out all fibers
     event_types = {
-        k for k in event_types
-        if not any(k.startswith(prefix) for prefix in FIP_prefixes)
+        k for k in event_types if not any(k.startswith(prefix) for prefix in FIP_prefixes)
     }
 
     event_types -= {"FIP_falling_time", "FIP_rising_time"}
@@ -575,11 +575,11 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
     # Add trial index for each event
-    trial_starts = nwb.trials.start_time[:] - t0
-    last_stop = nwb.trials.stop_time[-1] - t0
+    trial_starts = nwb.trials.goCue_start_time[:] - t0
+    last_stop = np.inf
     trial_index = []
     for index, e in df.iterrows():
-        starts = np.where(e.timestamps > trial_starts)[0]
+        starts = np.where(e.timestamps >= trial_starts)[0]
         if len(starts) == 0:
             trial_index.append(-1)
         elif e.timestamps > last_stop:
@@ -615,7 +615,7 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     # Build list of all FIB events in NWB file
     nwb_data = nwb.acquisition
     if len(nwb.processing):
-        nwb_data = nwb.acquisition | nwb.processing['fiber_photometry'].data_interfaces
+        nwb_data = nwb.acquisition | nwb.processing["fiber_photometry"].data_interfaces
 
     event_types = set(nwb_data.keys())
 
@@ -624,10 +624,7 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     FIP_prefixes = [f"{c}_{f}" for c in channels for f in fibers]
 
     # Filter out all fibers
-    event_types = {
-        k for k in event_types
-        if any(k.startswith(prefix) for prefix in FIP_prefixes)
-    }
+    event_types = {k for k in event_types if any(k.startswith(prefix) for prefix in FIP_prefixes)}
 
     event_types.add("FIP_falling_time")
     event_types.add("FIP_rising_time")
