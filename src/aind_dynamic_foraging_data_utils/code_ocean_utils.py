@@ -27,7 +27,7 @@ URL = "https://api.allenneuraldynamics-test.org/v1/behavior_analysis/mle_fitting
 def get_subject_assets(subject_id, processed=True):
     """
     Returns the docDB results for a subject. If duplicate entries exist, take the last
-    based on processing time
+    based on processing time. Skips pavlovian task.
 
     subject_id (str or int) subject id to get assets for from docDB
     processed (bool) if True, look for processed assets. If False, look for raw assets
@@ -42,19 +42,32 @@ def get_subject_assets(subject_id, processed=True):
         host="api.allenneuraldynamics.org", database="metadata_index", collection="data_assets"
     )
 
+    task_filter = {
+        "$or": [
+            {"session": None},
+            {
+                "session": {"$exists": True, "$ne": None},
+                "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"}
+            }
+        ]
+    }
     # Query based on subject id
     if processed:
         results = pd.DataFrame(
             client.retrieve_docdb_records(
                 filter_query={
-                    "name": {"$regex": "^behavior_{}_.*processed_[0-9-_]*$".format(subject_id)}
+                    "name": {"$regex": "^behavior_{}_.*processed_[0-9-_]*$".format(subject_id)},
+                    **task_filter
                 }
             )
         )
     else:
         results = pd.DataFrame(
             client.retrieve_docdb_records(
-                filter_query={"name": {"$regex": "^behavior_{}_[0-9-_]*$".format(subject_id)}}
+                filter_query={
+                    "name": {"$regex": "^behavior_{}_[0-9-_]*$".format(subject_id)},
+                    **task_filter
+                }
             )
         )
 
