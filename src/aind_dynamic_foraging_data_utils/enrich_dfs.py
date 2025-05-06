@@ -85,7 +85,7 @@ def enrich_df_trials_fm(df_trials_fm):
         return df_trials_fm_enriched
 
 
-def get_df_fip_trials(input_obj, offsets=[-1, 1], alignment_events = ['goCue_start_time_in_trial', 'stop_time_in_trial']):
+def get_df_fip_trials(input_obj):
     """
     Processes df_fip and df_trials, computing z-scored data and aligning timestamps.
 
@@ -101,8 +101,17 @@ def get_df_fip_trials(input_obj, offsets=[-1, 1], alignment_events = ['goCue_sta
         df_fip, df_trials = input_obj
     else:
         df_fip, df_trials = input_obj.df_fip, input_obj.df_trials
+    
+
+    last_timestamps = df_fip.groupby('ses_idx', sort = False)['timestamps'].last()
+    df_trials['goCue_start_time_next_in_session'] = df_trials.groupby('ses_idx')["goCue_start_time_in_session"].shift(-1, fill_value = -1)
+    df_trials.loc[df_trials['goCue_start_time_next_in_session'] == -1, 'goCue_start_time_next_in_session'] = last_timestamps
+    df_trials['goCue_start_time_next_in_trial'] = df_trials['goCue_start_time_next_in_session'] - df_trials['goCue_start_time_in_session']
 
 
+
+    alignment_events = ['goCue_start_time_in_trial', 'goCue_start_time_next_in_trial']
+    offsets=[-1, -1]
     # zscore data
 
     if 'data_z' not in df_fip.columns:
