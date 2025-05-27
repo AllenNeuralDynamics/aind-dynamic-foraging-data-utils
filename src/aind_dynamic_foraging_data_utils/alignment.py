@@ -454,16 +454,6 @@ def event_triggered_response(  # noqa C901
                 interpolated[data_dict["time"] > np.max(data_slice.index - event_time)] = np.nan
                 data_dict.update({"event_{}_t={}".format(event_number, event_time): interpolated})
 
-                # data_dict.update(
-                #     {
-                #         "event_{}_t={}".format(event_number, event_time): np.interp(
-                #             data_dict["time"],
-                #             data_slice.index - event_time,
-                #             data_slice.values,
-                #         )
-                #     }
-                # )
-
         # define a wide dataframe as a dataframe of the above compiled dictionary  # NOQA E501
         wide_etr = pd.DataFrame(data_dict)
 
