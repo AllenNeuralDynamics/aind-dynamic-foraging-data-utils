@@ -499,12 +499,9 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
         rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE
     ), "Rewarded trial with negative choice_time_in_trial"
 
-    check_rew_time = np.isnan(
-        df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"]
-    )
-    if not np.all(check_rew_time):
-        warnings.warn("Unrewarded trials with reward time. If this was data from 2024, \
-                    this is likely because extra_rewards are not recorded", UserWarning)
+    assert np.all(
+        np.isnan(df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"])
+    ), "Unrewarded trials with reward time"
 
     # Drop columns
     drop_cols += key_from_acq
