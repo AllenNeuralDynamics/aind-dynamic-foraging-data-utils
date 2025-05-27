@@ -482,10 +482,11 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
         warnings.warn("Response time greater than minimum, something unusual happened")
 
     # Sanity checks
+
     rewarded_df = df.query("earned_reward")
-    assert (
-        np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0
-    ), "Rewarded trials without reward time"
+    if not np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0:
+        warnings.warn("Rewarded trials without reward time. \
+            This is likely due to manual rewards not being recorded in sessions from 2024")
 
     assert (
         np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0
@@ -493,15 +494,19 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
 
     earned_df = rewarded_df.query("not extra_reward")
     if not np.all(earned_df["choice_time_in_session"] <= earned_df["reward_time_in_session"]):
-        warnings.warn("Reward before choice time. This is likely due to manual rewards")
+        warnings.warn("Reward before choice time. \
+            This is likely due to manual rewards not being recorded in sessions from 2024")
 
     assert np.all(
         rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE
     ), "Rewarded trial with negative choice_time_in_trial"
 
-    assert np.all(
-        np.isnan(df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"])
-    ), "Unrewarded trials with reward time"
+    check_rew_time = np.isnan(
+        df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"]
+    )
+    if not np.all(check_rew_time):
+        warnings.warn("Unrewarded trials with reward time. If this was data from 2024, \
+                    this is likely because extra_rewards are not recorded", UserWarning)
 
     # Drop columns
     drop_cols += key_from_acq
