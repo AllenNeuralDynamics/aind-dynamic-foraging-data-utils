@@ -8,18 +8,18 @@ Important utility functions for formatting the data
     get_foraging_model_info
 """
 
-import json
 import os
 import warnings
 
 import numpy as np
 import pandas as pd
-import requests
 from codeocean import CodeOcean
 from codeocean.data_asset import DataAssetAttachParams
 from aind_data_access_api.document_db import MetadataDbClient
 
 from aind_dynamic_foraging_data_utils import nwb_utils
+from aind_analysis_arch_result_access.han_pipeline import get_mle_model_fitting
+
 
 URL = "https://api.allenneuraldynamics-test.org/v1/behavior_analysis/mle_fitting"
 
@@ -201,40 +201,8 @@ def get_all_df_for_nwb(filename_sessions, loc="../scratch/", interested_channels
         df_trials.to_csv(loc + "df_trials.csv", index=False)
 
 
-def check_avail_model_by_nwb_name(nwb_name):
-    """
-    check_avail_model_by_nwb_name checks all available models fitted to a given session
-    nwb_name
-    """
-    filter = {
-        "nwb_name": nwb_name,  # Session id,
-    }
-    projection = {
-        "analysis_results.fit_settings.agent_alias": 1,
-        "_id": 0,
-    }
-    response = requests.get(
-        URL, params={"filter": json.dumps(filter), "projection": json.dumps(projection)}
-    )
-
-    if not response.json():
-        # small subset of sessions need "behavior" prefix.
-        filter_try2 = {
-            "nwb_name": "behavior_" + nwb_name,  # Session id,
-        }
-        response = requests.get(
-            URL,
-            params={"filter": json.dumps(filter_try2), "projection": json.dumps(projection)},
-        )
-
-    fitted_models = [
-        item["analysis_results"]["fit_settings"]["agent_alias"] for item in response.json()
-    ]
-    print(fitted_models)
-
-
 def get_foraging_model_info(
-    df_trials, df_sess, nwb_names, loc=None, model_name="QLearning_L2F1_CK1_softmax"
+    df_trials, df_sess, loc=None, model_name="QLearning_L2F1_CKfull_softmax"
 ):
     """
     get_foraging_model_info: retrieves fitted foraging_model information
@@ -243,8 +211,6 @@ def get_foraging_model_info(
                (if choice kernel in model), L_kernel, R_kernel
     df_sess: dataframe for sessions (1 row per session) from nwb_utils.create_df_sessions
                saved df_sess_fm will have parameters fitted for each mouse.
-    nwb_names: the filenames for the nwbs, formatted
-                `<SUBJECT_ID>_<SESS_YEAR-SES_MON-SES_DATE>_<SESS_TIME>.nwb`
     loc: location to save the updated df_trials, df_sess with suffix `_fm.csv`.
                 If given, we will save, otherwise we will return the dataframes
     model_name: model alias to get the model information
@@ -267,50 +233,24 @@ def get_foraging_model_info(
         df_trials_fm["R_kernel"] = pd.NA
 
     df_sess_params = []
-    for nwb_name in nwb_names:
-        filter = {
-            "nwb_name": nwb_name,  # Session id,
-            "analysis_results.fit_settings.agent_alias": model_name,
-        }
-
-        projection = {
-            "analysis_results.params": 1,
-            "analysis_results.fitted_latent_variables": 1,
-            "_id": 0,
-        }
-        response = requests.get(
-            URL, params={"filter": json.dumps(filter), "projection": json.dumps(projection)}
+    for index, sess_i in df_sess.iterrows():
+        df = get_mle_model_fitting(
+            subject_id=str(sess_i['subject_id']), session_date=str(sess_i['session_date']),
+            agent_alias=model_name
         )
 
-        if not response.json():
-            # small subset of sessions need "behavior" prefix.
-            filter_try2 = {
-                "nwb_name": "behavior_" + nwb_name,  # Session id,
-                "analysis_results.fit_settings.agent_alias": model_name,
-            }
-            response = requests.get(
-                URL,
-                params={"filter": json.dumps(filter_try2), "projection": json.dumps(projection)},
-            )
-            if not response.json():
-                print(f"!!!!!!!! NO modeling info for {nwb_name}")
-                continue
-        print(nwb_name)
-        record_dict = response.json()[0]
+        if df is None:
+            continue  # skip if no model fits is found for this session
+
         # Fitted parameters
-        params = record_dict["analysis_results"]["params"]
+        params = df["params"][0]
 
         # Fitted latent variables
-        fitted_latent = record_dict["analysis_results"]["fitted_latent_variables"]
+        fitted_latent = df["latent_variables"][0]
 
         # pull the information
-        ses_idx = "_".join(nwb_name.split("_")[:2])
-        num_trials = df_sess.loc[df_sess["ses_idx"] == ses_idx, "total_trials"].values[
-            0
-        ]  # all trials, 0, 1, 2
-        qvals, choice_kernel, choice_prob = (np.full((2, num_trials), np.nan) for _ in range(3))
         mouse_choice_idx = df_trials_fm.index[
-            (df_trials_fm["ses_idx"] == ses_idx) & (df_trials_fm["choice"] < 2)
+            (df_trials_fm["ses_idx"] == str(sess_i['ses_idx'])) & (df_trials_fm["choice"] < 2)
         ]
 
         qvals = np.array(fitted_latent["q_value"]).astype(float)
@@ -326,7 +266,7 @@ def get_foraging_model_info(
             df_trials_fm.loc[mouse_choice_idx, "L_kernel"] = choice_kernel[0, :-1]
             df_trials_fm.loc[mouse_choice_idx, "R_kernel"] = choice_kernel[1, :-1]
 
-        params["ses_idx"] = ses_idx
+        params["ses_idx"] = str(sess_i['ses_idx'])
         df_sess_params.append(params)
 
     df_sess_params = pd.DataFrame(df_sess_params)
