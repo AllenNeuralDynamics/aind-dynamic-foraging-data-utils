@@ -160,7 +160,6 @@ def get_all_df_for_nwb(filename_sessions, loc="../scratch/", interested_channels
             print(f"Skipping {ses_idx} due to assertion error: {e}")
             continue  # move to the next mouse
 
-
         # FIP
         df_ses_fip = nwb_utils.create_fib_df(nwb, tidy=True)
         if interested_channels:
