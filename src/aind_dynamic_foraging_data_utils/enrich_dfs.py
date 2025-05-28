@@ -10,26 +10,17 @@ import numpy as np
 import pandas as pd
 from scipy.stats import zscore
 
-def get_df_fip_trials(input_obj):
-    # TODO:Alex commented 
-    """
-    I don't think we should support taking in a tuple as an argument. 
-    I think we should be consistent about operating on an analysis object, or a dataframe, not a third option
-    """
+
+def get_df_fip_trials(df_fip, df_trials):
     """
     Processes df_fip and df_trials, computing z-scored data and aligning timestamps.
     Args:
-        input_obj: Either (df_fip, df_trials) OR an `nwb` object
-                    with attributes `df_fip` and `df_trials`.
+        df_fip (pd.DataFrame): A DataFrame with FIP data, each row a timepoint for a signal
+        df_trials (pd.DataFrame): A DataFrame of trials (each row a trial)
     Returns:
         Tuple (df_fip, df_trials) with updated trial alignment and z-scored data.
     """
 
-    # Extract df_fip and df_trials from input (handle both tuple and nwb object)
-    if isinstance(input_obj, tuple):
-        df_fip, df_trials = input_obj
-    else:
-        df_fip, df_trials = input_obj.df_fip, input_obj.df_trials
     # get the goCue of the next trial defined
     last_timestamps = df_fip.groupby('ses_idx', sort=False)['timestamps'].last()
     df_trials['goCue_start_time_next_in_session'] = df_trials.groupby('ses_idx')["goCue_start_time_in_session"].shift(-1, fill_value=-1)  # noqa: E501
@@ -38,15 +29,9 @@ def get_df_fip_trials(input_obj):
     # set alignment events and offsets
     alignment_events = ['goCue_start_time_in_trial', 'goCue_start_time_next_in_trial']
     offsets = [-1, -1]
-    # zscore data if needed
-    if 'data_z' not in df_fip.columns:
-        df_fip.loc[:, 'data_z'] = df_fip.groupby(['ses_idx', 'event'])['data'].transform(
+    
+    df_fip.loc[:, 'data_z'] = df_fip.groupby(['ses_idx', 'event'])['data'].transform(
                                                  lambda x: zscore(x, ddof=1, nan_policy='omit'))
-    # TODO: ALex commented: 
-    """
-    I think I would enforce that z-scoring only happens in one place. 
-    So if this is sometimes happening elsewhere, I would always do it there
-    """
     for (ses_idx, event), df_fip_i in df_fip.groupby(['ses_idx', 'event']):
         # pull fip data into df_trials
         df_trials_ses = df_trials.loc[df_trials['ses_idx'] == ses_idx, :]
@@ -75,7 +60,7 @@ def get_df_fip_trials(input_obj):
     return (df_fip, df_trials)
 
 
-def tidy_df_trials(input_obj, test=False):
+def tidy_df_trials(df_trials, df_fip, data_cols = ['data', 'data_z']):
     """
     Converts df_trials into a fully tidy long-format DataFrame.
     - Extracts event names from `timestamps_{event}` columns.
@@ -84,35 +69,23 @@ def tidy_df_trials(input_obj, test=False):
     - Merges the tidied data with df_fip on `ses_idx` and `timestamps`.
 
     Args:
-        input_obj: Either (df_trials, df_fip) OR an `nwb` object
-                    with attributes `df_trials` and `df_fip`.
-        test: determines if we include 'data' and 'data_z' to test the merge
+        df_trials (pd.DataFrame): A DataFrame of trials (each row a trial)
+        df_fip (pd.DataFrame): A DataFrame with FIP data, each row a timepoint for a signal
+        data_cols (list, optional): List of data columns to explode in the returned DataFrame.       
+        
 
     Returns:
-        pd.DataFrame: A long-format DataFrame with merged `df_fip`.
+        df_tidy (pd.DataFrame): A long-format DataFrame with merged `df_fip`.
     """
-    # TODO: Alex commented
-    """
-    Again, I don't think we should support a tuple as an input option
-    """
-    # Extract df_trials and df_fip from input (handle both tuple and nwb object)
-    if isinstance(input_obj, tuple):
-        df_trials, df_fip = input_obj
-    else:
-        df_trials, df_fip = input_obj.df_trials, input_obj.df_fip
-# Step 1: Identify relevant timestamp and data columns
+    # Step 1: Identify relevant timestamp and data columns
     timestamp_cols = [col for col in df_trials.columns
                       if col.startswith("timestamps_") and col.endswith("in_session")]
     # TODO: ALex commented:
     """
     Doesn't have to be in_session right? If the timestamps aren't aligned to the session start
     """
-    if test:
-        data_cols = [col for col in df_trials.columns
-                     if col.startswith("data_") and not col.endswith("baseline")]
-    else:
-        data_cols = [col for col in df_trials.columns
-                     if col.startswith("data_") and col.endswith("_norm")]
+    data_cols = [col for col in df_trials.columns
+                 if col.startswith("data_") and col.endswith("_norm")]
 
     # Step 2: Initialize an empty list to store exploded DataFrames
     exploded_dfs = []
@@ -139,11 +112,7 @@ def tidy_df_trials(input_obj, test=False):
         """
         you could make the data columns "data", "data_z" input arguments right? That way this function becomes more general
         """
-        if test:
-            df_subset = df_subset.explode(['timestamps', 'data', 'data_z',
-                                           'data_norm', 'data_z_norm'], ignore_index=True)
-        else:
-            df_subset = df_subset.explode(['timestamps', 'data_norm',
+        df_subset = df_subset.explode(['timestamps', 'data_norm',
                                            'data_z_norm'], ignore_index=True)
 
         # Append to list for later concatenation
@@ -153,43 +122,30 @@ def tidy_df_trials(input_obj, test=False):
     df_exploded = pd.concat(exploded_dfs, ignore_index=True)
 
     # Step 5: Merge with df_fip on 'ses_idx' and 'timestamps'
-    df_fip_tonic = df_fip.merge(df_exploded, on=['ses_idx', 'timestamps', 'event'], how='left')
-    # TODO: alex commmented
-    """
-    Why is this called tonic? This function isn't specific to tonic analysis, right?
-    """
-
-    return df_fip_tonic.dropna().reset_index()
+    df_tidy = df_fip.merge(df_exploded, on=['ses_idx', 'timestamps', 'event'], how='left')
+    return df_tidy.dropna().reset_index()
 
 
-def remove_tonic_df_fip(input_obj, col_signal='data', col_time='timestamps',
+def remove_tonic_df_fip(df_trials_fip, df_fip, col_signal='data', col_time='timestamps',
                         baseline=[-1, 0], tidy=True):
     """
     Removes tonic activity by normalizing signal data against baseline.
 
     Args:
-        input_obj: Either (df_trials_fip) OR an `nwb` object with attribute `df_trials_fip`.
-                    nwb object is the nwb read with NWBZarrIO and a df_trials_fip
-                    (using get_df_trials_fip)
-                    df_trials_fip is a dataframe with of trials with signal data per trial
+        df_trials_fip (pd.DataFrame): A DataFrame of trials with signal data per trial
+        df_fip (pd.DataFrame): A DataFrame with FIP data, each row a timepoint for a signal
         col_signal (str, optional): The name of the signal column. Defaults to 'data'.
         col_time (str, optional): The name of the time column. Defaults to 'timestamps'.
-        baseline (list, optional): A list specifying the baseline time range for normalization.
-                                    Defaults to [-1, 0].
+        baseline (list, optional): The baseline time range for normalization
+                                    Time range is given as offsets from goCue of current trial to
+                                    goCue of next trial. Defaults to [-1, 0].
         tidy (bool, optional): Whether to return a tidy DataFrame. Defaults to True.
 
     Returns:
-        pd.DataFrame: The modified DataFrame with additional computed columns.
+        df_fip_tonic (pd.DataFrame): Updated df_fip with the baseline activity removed as columns
+                                'data_{signal}_norm'. Averaged baseline is recorded as 
+                                'data_{signal}_baseline'
     """
-    # TODO: ALex commented
-    """
-  What are the additional columns named? Can you define the naming scheme?
-        """
-    # Extract df_trials and df_fip from input (handle both tuple and nwb object)
-    if isinstance(input_obj, tuple):
-        df_trials_fip, df_fip = input_obj
-    else:
-        df_trials_fip, df_fip = input_obj.df_trials, input_obj.df_fip
 
     col_signals = [col for col in df_trials_fip.columns if col.startswith(col_signal)
                    and not col.endswith('_baseline')
