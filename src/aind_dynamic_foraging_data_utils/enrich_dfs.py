@@ -29,7 +29,7 @@ def get_df_fip_trials(df_fip, df_trials):
     # set alignment events and offsets
     alignment_events = ['goCue_start_time_in_trial', 'goCue_start_time_next_in_trial']
     offsets = [-1, -1]
-    
+
     df_fip.loc[:, 'data_z'] = df_fip.groupby(['ses_idx', 'event'])['data'].transform(
                                                  lambda x: zscore(x, ddof=1, nan_policy='omit'))
     for (ses_idx, event), df_fip_i in df_fip.groupby(['ses_idx', 'event']):
@@ -60,7 +60,7 @@ def get_df_fip_trials(df_fip, df_trials):
     return (df_fip, df_trials)
 
 
-def tidy_df_trials(df_trials, df_fip, data_cols = ['data', 'data_z']):
+def tidy_df_trials(df_fip, df_trials, data_cols=['data', 'data_z']):
     """
     Converts df_trials into a fully tidy long-format DataFrame.
     - Extracts event names from `timestamps_{event}` columns.
@@ -69,10 +69,10 @@ def tidy_df_trials(df_trials, df_fip, data_cols = ['data', 'data_z']):
     - Merges the tidied data with df_fip on `ses_idx` and `timestamps`.
 
     Args:
-        df_trials (pd.DataFrame): A DataFrame of trials (each row a trial)
         df_fip (pd.DataFrame): A DataFrame with FIP data, each row a timepoint for a signal
-        data_cols (list, optional): List of data columns to explode in the returned DataFrame.       
-        
+        df_trials (pd.DataFrame): A DataFrame of trials (each row a trial)
+        data_cols (list, optional): List of data columns to explode in the returned DataFrame.
+                                    Defaults to ['data', 'data_z'].
 
     Returns:
         df_tidy (pd.DataFrame): A long-format DataFrame with merged `df_fip`.
@@ -126,17 +126,17 @@ def tidy_df_trials(df_trials, df_fip, data_cols = ['data', 'data_z']):
     return df_tidy.dropna().reset_index()
 
 
-def remove_tonic_df_fip(df_trials_fip, df_fip, col_signal='data', col_time='timestamps',
-                        baseline=[-1, 0], tidy=True):
+def remove_tonic_df_fip(df_fip, df_trials_fip,  col_signal='data', col_time='timestamps',
+                        offset_from_goCue=[-1, 0], tidy=True):
     """
     Removes tonic activity by normalizing signal data against baseline.
 
     Args:
-        df_trials_fip (pd.DataFrame): A DataFrame of trials with signal data per trial
         df_fip (pd.DataFrame): A DataFrame with FIP data, each row a timepoint for a signal
+        df_trials_fip (pd.DataFrame): A DataFrame of trials with signal data per trial
         col_signal (str, optional): The name of the signal column. Defaults to 'data'.
         col_time (str, optional): The name of the time column. Defaults to 'timestamps'.
-        baseline (list, optional): The baseline time range for normalization
+        offset_from_goCue (list, optional): The baseline time range for normalization
                                     Time range is given as offsets from goCue of current trial to
                                     goCue of next trial. Defaults to [-1, 0].
         tidy (bool, optional): Whether to return a tidy DataFrame. Defaults to True.
@@ -155,8 +155,8 @@ def remove_tonic_df_fip(df_trials_fip, df_fip, col_signal='data', col_time='time
             continue
         signal_name = col_signal.removeprefix('data_z').removeprefix('data').removesuffix('_norm')
         df_trials_fip.loc[:, col_signal+'_baseline'] = df_trials_fip.apply(
-            lambda x: np.nanmean(x[col_signal][(x[col_time+signal_name] < baseline[1]) &
-                                               (x[col_time+signal_name] > baseline[0])])
+            lambda x: np.nanmean(x[col_signal][(x[col_time+signal_name] < offset_from_goCue[1]) &
+                                               (x[col_time+signal_name] > offset_from_goCue[0])])
             # Skip calculation if col_signal is NaN
             if not np.isnan(x[col_signal]).all() else np.nan,
             axis=1
@@ -169,5 +169,5 @@ def remove_tonic_df_fip(df_trials_fip, df_fip, col_signal='data', col_time='time
             axis=1
         )
     if tidy:
-        return tidy_df_trials((df_trials_fip, df_fip))
+        return tidy_df_trials(df_fip, df_trials_fip)
     return df_trials_fip
