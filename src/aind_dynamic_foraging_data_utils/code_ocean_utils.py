@@ -134,58 +134,59 @@ def get_all_df_for_nwb(filename_sessions, interested_channels=None):
     """
     get_all_df_for_nwb gets all the dataframes for the NWB and saves it
     iteratively onto a location in '../scratch/' or a specified location
-    example: get_all_df_for_nwb(filename_sessions, loc = '../scratch/kenta_dec2/'
+    example: get_all_df_for_nwb(filename_sessions,
                     , interested_channels = interested_channels)
+    Returns:
+        df_trials (pd.DataFrame): dataframe with each row a trial from sessions
+        df_events (pd.DataFrame): dataframe with each row an event from sessions
+        df_fip (pd.DataFrame): dataframe with each row a timepoint for a signal from sessions
     """
     print(f"Saving channels: {interested_channels}")
 
-    # sessions can be saved with list of nwbs
-    df_session = nwb_utils.create_df_session(filename_sessions)
-    df_trials = pd.DataFrame()
-    df_fip = pd.DataFrame()
-    df_events = pd.DataFrame()
+    # Lists to collect session-level DataFrames
+    list_df_trials = []
+    list_df_events = []
+    list_df_fip = []
 
     for idx, nwb_file in enumerate(filename_sessions):
         nwb = nwb_utils.load_nwb_from_filename(nwb_file)
         ses_idx = nwb_file.split("/")[-1].replace("behavior_", "").rsplit("_", 1)[0]
         print(f"CURRENTLY RUNNING {idx+1}/{len(filename_sessions)}: {ses_idx}")
-        print(
-            "--------------------------------------------------\
-            ---------------------------------------"
-        )
+        print("--------------------------------------------------")
 
+        # Trials
         try:
-            # trials
             df_ses_trials = nwb_utils.create_df_trials(nwb)
+            list_df_trials.append(df_ses_trials)
         except AssertionError as e:
             print(f"Skipping {ses_idx} due to assertion error in df_trials: {e}")
-            continue  # move to the next mouse
-        df_trials = pd.concat([df_trials, df_ses_trials], axis=0)
+            continue  # skip to next file
 
         # FIP
         try:
             df_ses_fip = nwb_utils.create_fib_df(nwb, tidy=True)
+            if interested_channels:
+                df_ses_fip = df_ses_fip[df_ses_fip["event"].isin(interested_channels)]
+            list_df_fip.append(df_ses_fip)
         except AssertionError as e:
             print(f"Skipping {ses_idx} due to assertion error in df_fip: {e}")
             continue
-        if interested_channels:
-            df_ses_fip = df_ses_fip[df_ses_fip["event"].isin(interested_channels)]
-        df_fip = pd.concat([df_fip, df_ses_fip], axis=0)
 
-        # events
+        # Events
         try:
             df_ses_events = nwb_utils.create_events_df(nwb)
-            df_ses_events["ses_idx"] = ses_idx  # df_events has no ses_idx column
+            df_ses_events["ses_idx"] = ses_idx  # Add session identifier
+            list_df_events.append(df_ses_events)
         except AssertionError as e:
             print(f"Skipping {ses_idx} due to assertion error in df_events: {e}")
             continue
-        df_events = pd.concat([df_events, df_ses_events], axis=0)
 
-    df_trials = df_trials.reset_index(drop=True)
-    df_events = df_events.reset_index(drop=True)
-    df_fip = df_fip.reset_index(drop=True)
+    # Concatenate all collected DataFrames
+    df_trials = pd.concat(list_df_trials, axis=0).reset_index(drop=True)
+    df_events = pd.concat(list_df_events, axis=0).reset_index(drop=True)
+    df_fip = pd.concat(list_df_fip, axis=0).reset_index(drop=True)
 
-    return (df_session, df_trials, df_events, df_fip)
+    return (df_trials, df_events, df_fip)
 
 
 def get_foraging_model_info(
