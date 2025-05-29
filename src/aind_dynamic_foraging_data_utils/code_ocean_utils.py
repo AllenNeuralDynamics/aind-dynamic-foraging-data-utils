@@ -16,7 +16,6 @@ import pandas as pd
 from codeocean import CodeOcean
 from codeocean.data_asset import DataAssetAttachParams
 from aind_data_access_api.document_db import MetadataDbClient
-
 from aind_dynamic_foraging_data_utils import nwb_utils
 
 
@@ -130,22 +129,20 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
     return results
 
 
-def get_all_df_for_nwb(filename_sessions, loc="../scratch/", interested_channels=None):
+def get_all_df_for_nwb(filename_sessions, interested_channels=None):
     """
     get_all_df_for_nwb gets all the dataframes for the NWB and saves it
     iteratively onto a location in '../scratch/' or a specified location
     example: get_all_df_for_nwb(filename_sessions, loc = '../scratch/kenta_dec2/'
                     , interested_channels = interested_channels)
     """
-    if not os.path.exists(loc):
-        os.makedirs(loc)
-        print(f"Directory created: {loc}")
-    else:
-        print(f"Saving at: {loc}")
-
     print(f"Saving channels: {interested_channels}")
 
+    # sessions can be saved with list of nwbs
+    df_session = nwb_utils.create_df_session(filename_sessions)
     df_trials = pd.DataFrame()
+    df_fip = pd.DataFrame()
+    df_events = pd.DataFrame()
 
     for idx, nwb_file in enumerate(filename_sessions):
         nwb = nwb_utils.load_nwb_from_filename(nwb_file)
@@ -156,45 +153,38 @@ def get_all_df_for_nwb(filename_sessions, loc="../scratch/", interested_channels
             ---------------------------------------"
         )
 
-        # sessions
-        df_session = nwb_utils.create_df_session(nwb)
-        df_session["ses_idx"] = ses_idx
-
         try:
             # trials
             df_ses_trials = nwb_utils.create_df_trials(nwb)
-            df_ses_trials["ses_idx"] = ses_idx
-            df_trials = pd.concat([df_trials, df_ses_trials], axis=0)
         except AssertionError as e:
-            print(f"Skipping {ses_idx} due to assertion error: {e}")
+            print(f"Skipping {ses_idx} due to assertion error in df_trials: {e}")
             continue  # move to the next mouse
+        df_trials = pd.concat([df_trials, df_ses_trials], axis=0)
 
         # FIP
-        df_ses_fip = nwb_utils.create_fib_df(nwb, tidy=True)
+        try:
+            df_ses_fip = nwb_utils.create_fib_df(nwb, tidy=True)
+        except AssertionError as e:
+            print(f"Skipping {ses_idx} due to assertion error in df_fip: {e}")
+            continue
         if interested_channels:
             df_ses_fip = df_ses_fip[df_ses_fip["event"].isin(interested_channels)]
+        df_fip = pd.concat([df_fip, df_ses_fip], axis=0)
 
         # events
-        df_ses_events = nwb_utils.create_events_df(nwb)
-        df_ses_events["ses_idx"] = ses_idx
+        try:
+            df_ses_events = nwb_utils.create_events_df(nwb)
+            df_ses_events["ses_idx"] = ses_idx  # df_events has no ses_idx column
+        except AssertionError as e:
+            print(f"Skipping {ses_idx} due to assertion error in df_events: {e}")
+            continue
+        df_events = pd.concat([df_events, df_ses_events], axis=0)
 
-        if idx == 0:
-            df_session.to_csv(loc + "df_sess.csv", index=False)
-            df_ses_fip.to_csv(loc + "df_fip.csv", index=False)
-            df_ses_events.to_csv(loc + "df_events.csv", index=False)
-        else:
-            df_session.to_csv(loc + "df_sess.csv", mode="a", index=False, header=False)
+    df_trials = df_trials.reset_index(drop=True)
+    df_events = df_events.reset_index(drop=True)
+    df_fip = df_fip.reset_index(drop=True)
 
-            df_ses_fip.to_csv(loc + "df_fip.csv", mode="a", index=False, header=False)
-            df_ses_events.to_csv(loc + "df_events.csv", mode="a", index=False, header=False)
-
-        # df_trials saved separately because older data have lickspout_y
-        # and newer ones have lickspout_y1,y2
-        # correct fix is lickspout_y == lickspout_y1 == lickspout_y2
-        # and always have lickspout_y1,y2.
-        # I will fix this at a later date.... code to fix this is below
-        df_trials = df_trials.reset_index(drop=True)
-        df_trials.to_csv(loc + "df_trials.csv", index=False)
+    return (df_session, df_trials, df_events, df_fip)
 
 
 def get_foraging_model_info(
