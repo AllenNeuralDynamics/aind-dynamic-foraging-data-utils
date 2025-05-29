@@ -17,7 +17,7 @@ def enrich_df_trials_fm(df_trials_fm):
                          RPE_earned, RPE_all, Q_chosen, Q_unchosen, Q_sum, Q_Delta, Q_change
                          model information can be found in repo: aind-dynamic-foraging-models
                          model fitting is done through this repo:
-                         aind-foraging-behavior-bonsai-trigger-pipeline
+                         aind-analysis-arch-pipeine-dynamic-foraging
     RPE_earned: earned_reward - chosen_values
     RPE_all: (earned_reward + extra_reward) - chosen_values
     """

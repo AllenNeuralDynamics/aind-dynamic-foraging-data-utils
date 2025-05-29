@@ -18,10 +18,6 @@ from codeocean.data_asset import DataAssetAttachParams
 from aind_data_access_api.document_db import MetadataDbClient
 
 from aind_dynamic_foraging_data_utils import nwb_utils
-from aind_analysis_arch_result_access.han_pipeline import get_mle_model_fitting
-
-
-URL = "https://api.allenneuraldynamics-test.org/v1/behavior_analysis/mle_fitting"
 
 
 def get_subject_assets(subject_id, processed=True):
