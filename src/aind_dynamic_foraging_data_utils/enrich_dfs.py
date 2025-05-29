@@ -178,7 +178,8 @@ def tidy_df_trials(df_fip, df_trials, col_prefix_signal):
     return df_tidy.dropna().reset_index()
 
 
-def remove_tonic_df_fip(df_fip, df_trials_fip, col_prefix_signal='data', col_prefix_time='timestamps_in_trial',
+def remove_tonic_df_fip(df_fip, df_trials_fip, col_prefix_signal='data',
+                        col_prefix_time='timestamps_in_trial',
                         offset_from_goCue=[-1, 0], tidy=True):
     """
     Removes tonic activity by normalizing signal data against baseline.
@@ -187,7 +188,8 @@ def remove_tonic_df_fip(df_fip, df_trials_fip, col_prefix_signal='data', col_pre
         df_fip (pd.DataFrame): A DataFrame with FIP data, each row a timepoint for a signal
         df_trials_fip (pd.DataFrame): A DataFrame of trials with signal data per trial
         col_prefix_signal (str, optional): The prefix of the signal column name. Defaults to 'data'.
-        col_prefix_time (str, optional): The prefix of the time column name. Defaults to 'timestamps_in_trial_'.
+        col_prefix_time (str, optional): The prefix of the time column name.
+                                            Defaults to 'timestamps_in_trial'.
         offset_from_goCue (list, optional): The baseline time range for normalization
                                     Time range is given as offsets from goCue of current trial to
                                     goCue of next trial. Defaults to [-1, 0].
@@ -210,11 +212,16 @@ def remove_tonic_df_fip(df_fip, df_trials_fip, col_prefix_signal='data', col_pre
         if col_signal + '_norm' in df_trials_fip.columns:
             continue
         signal_name = col_signal.removeprefix('data_z').removeprefix('data').removesuffix('_norm')
-        df_trials_fip.loc[:, col_signal+'_baseline'] = df_trials_fip.apply(
-            lambda x: np.nanmean(x[col_signal][(x[col_prefix_time+signal_name] < offset_from_goCue[1]) &
-                                               (x[col_prefix_time+signal_name] > offset_from_goCue[0])])
-            # Skip calculation if col_signal is NaN
-            if not np.isnan(x[col_signal]).all() else np.nan,
+        df_trials_fip.loc[:, col_signal + '_baseline'] = df_trials_fip.apply(
+            lambda x: (
+                np.nanmean(
+                    x[col_signal][
+                        (x[col_prefix_time + signal_name] < offset_from_goCue[1]) &
+                        (x[col_prefix_time + signal_name] > offset_from_goCue[0])
+                    ]
+                )
+                if not np.isnan(x[col_signal]).all() else np.nan
+            ),
             axis=1
         )
         df_trials_fip.loc[:, col_signal+'_norm'] = df_trials_fip.apply(
