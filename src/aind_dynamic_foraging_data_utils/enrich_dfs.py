@@ -166,6 +166,7 @@ def tidy_df_trials(df_fip, df_trials, col_prefix_signal):
             col for col in df_subset.columns if col.startswith(col_prefix_signal)
         ]
         df_subset = df_subset.explode(selected_cols, ignore_index=True)
+        df_subset[selected_cols] = df_subset[selected_cols].astype(float)
 
         # Append to list for later concatenation
         exploded_dfs.append(df_subset)
@@ -233,6 +234,7 @@ def remove_tonic_df_fip(df_fip, df_trials_fip, col_prefix_signal='data',
     if tidy:
         return tidy_df_trials(df_fip, df_trials_fip, col_prefix_signal)
     return df_trials_fip
+
 import itertools
 
 
@@ -277,8 +279,8 @@ def enrich_df_trials_fm(df_trials_fm):
                     unchosen_probabilities[i_idx] = df_ses[{'L': 'R', 'R': 'L'}[choice]+'_prob'].values[i_idx]  # noqa: E501
                     unchosen_kernels[i_idx] = df_ses[{'L': 'R', 'R': 'L'}[choice]+'_kernel'].values[i_idx]  # noqa: E501
                     # chosen_licks[i_idx] = df_ses['licks '+choice].values[i_idx]
-                if i_idx < len(df_ses)-1:
-                    chosen_stay_probabilities[i_idx] = df_ses[choice+'_prob'].values[i_idx+1]
+                # if i_idx < len(df_ses)-1:
+                #     chosen_stay_probabilities[i_idx] = df_ses[choice+'_prob'].values[i_idx+1] # causes a problem if next choice is I
         for i_mod, mod in enumerate(models):
             df_ses.loc[:, 'Q_chosen'] = chosen_values
             df_ses.loc[:, 'Q_unchosen'] = unchosen_values
