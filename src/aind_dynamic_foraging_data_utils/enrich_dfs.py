@@ -9,6 +9,7 @@ Important utility functions for enriching the dataframes
 import numpy as np
 import pandas as pd
 from scipy.stats import zscore
+import itertools
 
 
 def extract_time_window(x, timepoints, alignment_events, offsets, absolute_time, align_in_trial):
@@ -235,8 +236,6 @@ def remove_tonic_df_fip(df_fip, df_trials_fip, col_prefix_signal='data',
         return tidy_df_trials(df_fip, df_trials_fip, col_prefix_signal)
     return df_trials_fip
 
-import itertools
-
 
 def enrich_df_trials_fm(df_trials_fm):
     """
@@ -280,7 +279,7 @@ def enrich_df_trials_fm(df_trials_fm):
                     unchosen_kernels[i_idx] = df_ses[{'L': 'R', 'R': 'L'}[choice]+'_kernel'].values[i_idx]  # noqa: E501
                     # chosen_licks[i_idx] = df_ses['licks '+choice].values[i_idx]
                 if i_idx < len(df_ses)-1:
-                    chosen_stay_probabilities[i_idx] = df_ses[choice+'_prob'].values[i_idx+1] # causes a problem if next choice is I
+                    chosen_stay_probabilities[i_idx] = df_ses[choice+'_prob'].values[i_idx+1]
         for i_mod, mod in enumerate(models):
             df_ses.loc[:, 'Q_chosen'] = chosen_values
             df_ses.loc[:, 'Q_unchosen'] = unchosen_values
