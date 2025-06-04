@@ -279,8 +279,8 @@ def enrich_df_trials_fm(df_trials_fm):
                     unchosen_probabilities[i_idx] = df_ses[{'L': 'R', 'R': 'L'}[choice]+'_prob'].values[i_idx]  # noqa: E501
                     unchosen_kernels[i_idx] = df_ses[{'L': 'R', 'R': 'L'}[choice]+'_kernel'].values[i_idx]  # noqa: E501
                     # chosen_licks[i_idx] = df_ses['licks '+choice].values[i_idx]
-                # if i_idx < len(df_ses)-1:
-                #     chosen_stay_probabilities[i_idx] = df_ses[choice+'_prob'].values[i_idx+1] # causes a problem if next choice is I
+                if i_idx < len(df_ses)-1:
+                    chosen_stay_probabilities[i_idx] = df_ses[choice+'_prob'].values[i_idx+1] # causes a problem if next choice is I
         for i_mod, mod in enumerate(models):
             df_ses.loc[:, 'Q_chosen'] = chosen_values
             df_ses.loc[:, 'Q_unchosen'] = unchosen_values
