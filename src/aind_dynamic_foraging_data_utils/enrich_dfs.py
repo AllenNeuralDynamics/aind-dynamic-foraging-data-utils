@@ -119,7 +119,7 @@ def get_df_fip_trials(df_fip, df_trials):
     return (df_fip, df_trials)
 
 
-def tidy_df_trials(df_fip, df_trials, col_prefix_signal):
+def tidy_df_trials(df_fip, df_trials, col_prefix_signal='data'):
     """
     Converts df_trials into a fully tidy long-format DataFrame.
     - Extracts event names from `timestamps_{event}` columns.
