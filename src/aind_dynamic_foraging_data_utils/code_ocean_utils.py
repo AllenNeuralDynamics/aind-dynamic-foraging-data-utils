@@ -210,15 +210,15 @@ def get_foraging_model_info(
     df_trials_fm["choice_name"] = df_trials_fm["choice"].map({1: "right", 0: "left"})
 
     df_trials_fm["model_name"] = model_name
-    df_trials_fm["L_prob"] = pd.NA
-    df_trials_fm["R_prob"] = pd.NA
-    df_trials_fm["L_value"] = pd.NA
-    df_trials_fm["R_value"] = pd.NA
+    df_trials_fm["L_prob"] = np.nan
+    df_trials_fm["R_prob"] = np.nan
+    df_trials_fm["L_value"] = np.nan
+    df_trials_fm["R_value"] = np.nan
 
     # check if CK is in model_name, if so, add df_trials_fm['L_kernel]
     if "CK" in model_name:
-        df_trials_fm["L_kernel"] = pd.NA
-        df_trials_fm["R_kernel"] = pd.NA
+        df_trials_fm["L_kernel"] = np.nan
+        df_trials_fm["R_kernel"] = np.nan
 
     df_sess_params = []
     for index, sess_i in df_sess.iterrows():
