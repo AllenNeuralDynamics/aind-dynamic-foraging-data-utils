@@ -139,7 +139,7 @@ def tidy_df_trials(df_fip, df_trials, col_prefix_signal='data'):
     timestamp_cols = [col for col in df_trials.columns
                       if col.startswith("timestamps_in_session")]
     data_cols = [col for col in df_trials.columns
-                 if col.startswith("data_") and col.endswith("_norm")]
+                 if col.startswith(col_prefix_signal + "_") and col.endswith("_norm")]
 
     # Step 2: Initialize an empty list to store exploded DataFrames
     exploded_dfs = []
@@ -148,7 +148,7 @@ def tidy_df_trials(df_fip, df_trials, col_prefix_signal='data'):
     for timestamp_col in timestamp_cols:
         event = timestamp_col.replace("timestamps_in_session_", "")
         # Find matching data columns for this event
-        matching_data_cols = [col for col in data_cols if event in col]
+        matching_data_cols = [col for col in data_cols if event + '_norm' in col]
 
         # Create df_subset with timestamps and all matching data columns
         df_subset = df_trials[['ses_idx', timestamp_col] + matching_data_cols].copy()
