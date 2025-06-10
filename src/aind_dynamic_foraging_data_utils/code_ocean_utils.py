@@ -8,26 +8,22 @@ Important utility functions for formatting the data
     get_foraging_model_info
 """
 
-import json
 import os
 import warnings
 
 import numpy as np
 import pandas as pd
-import requests
 from codeocean import CodeOcean
 from codeocean.data_asset import DataAssetAttachParams
 from aind_data_access_api.document_db import MetadataDbClient
-
 from aind_dynamic_foraging_data_utils import nwb_utils
-
-URL = "https://api.allenneuraldynamics-test.org/v1/behavior_analysis/mle_fitting"
+from aind_analysis_arch_result_access.han_pipeline import get_mle_model_fitting
 
 
 def get_subject_assets(subject_id, processed=True):
     """
     Returns the docDB results for a subject. If duplicate entries exist, take the last
-    based on processing time
+    based on processing time. Skips pavlovian task.
 
     subject_id (str or int) subject id to get assets for from docDB
     processed (bool) if True, look for processed assets. If False, look for raw assets
@@ -42,19 +38,32 @@ def get_subject_assets(subject_id, processed=True):
         host="api.allenneuraldynamics.org", database="metadata_index", collection="data_assets"
     )
 
+    task_filter = {
+        "$or": [
+            {"session": None},
+            {
+                "session": {"$exists": True, "$ne": None},
+                "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"}
+            }
+        ]
+    }
     # Query based on subject id
     if processed:
         results = pd.DataFrame(
             client.retrieve_docdb_records(
                 filter_query={
-                    "name": {"$regex": "^behavior_{}_.*processed_[0-9-_]*$".format(subject_id)}
+                    "name": {"$regex": "^behavior_{}_.*processed_[0-9-_]*$".format(subject_id)},
+                    **task_filter
                 }
             )
         )
     else:
         results = pd.DataFrame(
             client.retrieve_docdb_records(
-                filter_query={"name": {"$regex": "^behavior_{}_[0-9-_]*$".format(subject_id)}}
+                filter_query={
+                    "name": {"$regex": "^behavior_{}_[0-9-_]*$".format(subject_id)},
+                    **task_filter
+                }
             )
         )
 
@@ -121,107 +130,67 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
     return results
 
 
-def get_all_df_for_nwb(filename_sessions, loc="../scratch/", interested_channels=None):
+def get_all_df_for_nwb(filename_sessions, interested_channels=None):
     """
-    get_all_df_for_nwb gets all the dataframes for the NWB and saves it
-    iteratively onto a location in '../scratch/' or a specified location
-    example: get_all_df_for_nwb(filename_sessions, loc = '../scratch/kenta_dec2/'
-                    , interested_channels = interested_channels)
-    """
-    if not os.path.exists(loc):
-        os.makedirs(loc)
-        print(f"Directory created: {loc}")
-    else:
-        print(f"Saving at: {loc}")
+    get_all_df_for_nwb gets all the dataframes for the NWB and returns the df_trials, df_events, df_fip
 
+    Returns:
+        df_trials (pd.DataFrame): dataframe with each row a trial from sessions
+        df_events (pd.DataFrame): dataframe with each row an event from sessions
+        df_fip (pd.DataFrame): dataframe with each row a timepoint for a signal from sessions
+    """
     print(f"Saving channels: {interested_channels}")
 
-    df_trials = pd.DataFrame()
+    # Lists to collect session-level DataFrames
+    list_df_trials = []
+    list_df_events = []
+    list_df_fip = []
 
     for idx, nwb_file in enumerate(filename_sessions):
         nwb = nwb_utils.load_nwb_from_filename(nwb_file)
         ses_idx = nwb_file.split("/")[-1].replace("behavior_", "").rsplit("_", 1)[0]
         print(f"CURRENTLY RUNNING {idx+1}/{len(filename_sessions)}: {ses_idx}")
-        print(
-            "--------------------------------------------------\
-            ---------------------------------------"
-        )
+        print("--------------------------------------------------")
 
-        # sessions
-        df_session = nwb_utils.create_df_session(nwb)
-        df_session["ses_idx"] = ses_idx
-
+        # Tries to pull out df_trials, df_fip, df_events, otherwise go to next nwb_file
+        
+        # Trials
         try:
-            # trials
             df_ses_trials = nwb_utils.create_df_trials(nwb)
-            df_ses_trials["ses_idx"] = ses_idx
-            df_trials = pd.concat([df_trials, df_ses_trials], axis=0)
+            list_df_trials.append(df_ses_trials)
         except AssertionError as e:
-            print(f"Skipping {ses_idx} due to assertion error: {e}")
-            continue  # move to the next mouse
+            print(f"Skipping {ses_idx} due to assertion error in df_trials: {e}")
+            continue  
 
         # FIP
-        df_ses_fip = nwb_utils.create_fib_df(nwb, tidy=True)
-        if interested_channels:
-            df_ses_fip = df_ses_fip[df_ses_fip["event"].isin(interested_channels)]
+        try:
+            df_ses_fip = nwb_utils.create_fib_df(nwb, tidy=True)
+            if interested_channels:
+                df_ses_fip = df_ses_fip[df_ses_fip["event"].isin(interested_channels)]
+            list_df_fip.append(df_ses_fip)
+        except AssertionError as e:
+            print(f"Skipping {ses_idx} due to assertion error in df_fip: {e}")
+            continue
 
-        # events
-        df_ses_events = nwb_utils.create_events_df(nwb)
-        df_ses_events["ses_idx"] = ses_idx
+        # Events
+        try:
+            df_ses_events = nwb_utils.create_events_df(nwb)
+            df_ses_events["ses_idx"] = ses_idx  # Add session identifier
+            list_df_events.append(df_ses_events)
+        except AssertionError as e:
+            print(f"Skipping {ses_idx} due to assertion error in df_events: {e}")
+            continue
 
-        if idx == 0:
-            df_session.to_csv(loc + "df_sess.csv", index=False)
-            df_ses_fip.to_csv(loc + "df_fip.csv", index=False)
-            df_ses_events.to_csv(loc + "df_events.csv", index=False)
-        else:
-            df_session.to_csv(loc + "df_sess.csv", mode="a", index=False, header=False)
+    # Concatenate all collected DataFrames
+    df_trials = pd.concat(list_df_trials, axis=0).reset_index(drop=True)
+    df_events = pd.concat(list_df_events, axis=0).reset_index(drop=True)
+    df_fip = pd.concat(list_df_fip, axis=0).reset_index(drop=True)
 
-            df_ses_fip.to_csv(loc + "df_fip.csv", mode="a", index=False, header=False)
-            df_ses_events.to_csv(loc + "df_events.csv", mode="a", index=False, header=False)
-
-        # df_trials saved separately because older data have lickspout_y
-        # and newer ones have lickspout_y1,y2
-        # correct fix is lickspout_y == lickspout_y1 == lickspout_y2
-        # and always have lickspout_y1,y2.
-        # I will fix this at a later date.... code to fix this is below
-        df_trials = df_trials.reset_index(drop=True)
-        df_trials.to_csv(loc + "df_trials.csv", index=False)
-
-
-def check_avail_model_by_nwb_name(nwb_name):
-    """
-    check_avail_model_by_nwb_name checks all available models fitted to a given session
-    nwb_name
-    """
-    filter = {
-        "nwb_name": nwb_name,  # Session id,
-    }
-    projection = {
-        "analysis_results.fit_settings.agent_alias": 1,
-        "_id": 0,
-    }
-    response = requests.get(
-        URL, params={"filter": json.dumps(filter), "projection": json.dumps(projection)}
-    )
-
-    if not response.json():
-        # small subset of sessions need "behavior" prefix.
-        filter_try2 = {
-            "nwb_name": "behavior_" + nwb_name,  # Session id,
-        }
-        response = requests.get(
-            URL,
-            params={"filter": json.dumps(filter_try2), "projection": json.dumps(projection)},
-        )
-
-    fitted_models = [
-        item["analysis_results"]["fit_settings"]["agent_alias"] for item in response.json()
-    ]
-    print(fitted_models)
+    return (df_trials, df_events, df_fip)
 
 
 def get_foraging_model_info(
-    df_trials, df_sess, nwb_names, loc=None, model_name="QLearning_L2F1_CK1_softmax"
+    df_trials, df_sess, loc=None, model_name="QLearning_L2F1_CKfull_softmax"
 ):
     """
     get_foraging_model_info: retrieves fitted foraging_model information
@@ -230,8 +199,6 @@ def get_foraging_model_info(
                (if choice kernel in model), L_kernel, R_kernel
     df_sess: dataframe for sessions (1 row per session) from nwb_utils.create_df_sessions
                saved df_sess_fm will have parameters fitted for each mouse.
-    nwb_names: the filenames for the nwbs, formatted
-                `<SUBJECT_ID>_<SESS_YEAR-SES_MON-SES_DATE>_<SESS_TIME>.nwb`
     loc: location to save the updated df_trials, df_sess with suffix `_fm.csv`.
                 If given, we will save, otherwise we will return the dataframes
     model_name: model alias to get the model information
@@ -243,61 +210,35 @@ def get_foraging_model_info(
     df_trials_fm["choice_name"] = df_trials_fm["choice"].map({1: "right", 0: "left"})
 
     df_trials_fm["model_name"] = model_name
-    df_trials_fm["L_prob"] = pd.NA
-    df_trials_fm["R_prob"] = pd.NA
-    df_trials_fm["L_value"] = pd.NA
-    df_trials_fm["R_value"] = pd.NA
+    df_trials_fm["L_prob"] = np.nan
+    df_trials_fm["R_prob"] = np.nan
+    df_trials_fm["L_value"] = np.nan
+    df_trials_fm["R_value"] = np.nan
 
     # check if CK is in model_name, if so, add df_trials_fm['L_kernel]
     if "CK" in model_name:
-        df_trials_fm["L_kernel"] = pd.NA
-        df_trials_fm["R_kernel"] = pd.NA
+        df_trials_fm["L_kernel"] = np.nan
+        df_trials_fm["R_kernel"] = np.nan
 
     df_sess_params = []
-    for nwb_name in nwb_names:
-        filter = {
-            "nwb_name": nwb_name,  # Session id,
-            "analysis_results.fit_settings.agent_alias": model_name,
-        }
-
-        projection = {
-            "analysis_results.params": 1,
-            "analysis_results.fitted_latent_variables": 1,
-            "_id": 0,
-        }
-        response = requests.get(
-            URL, params={"filter": json.dumps(filter), "projection": json.dumps(projection)}
+    for index, sess_i in df_sess.iterrows():
+        df = get_mle_model_fitting(
+            subject_id=str(sess_i['subject_id']), session_date=str(sess_i['session_date']),
+            agent_alias=model_name
         )
 
-        if not response.json():
-            # small subset of sessions need "behavior" prefix.
-            filter_try2 = {
-                "nwb_name": "behavior_" + nwb_name,  # Session id,
-                "analysis_results.fit_settings.agent_alias": model_name,
-            }
-            response = requests.get(
-                URL,
-                params={"filter": json.dumps(filter_try2), "projection": json.dumps(projection)},
-            )
-            if not response.json():
-                print(f"!!!!!!!! NO modeling info for {nwb_name}")
-                continue
-        print(nwb_name)
-        record_dict = response.json()[0]
+        if df is None:
+            continue  # skip if no model fits is found for this session
+
         # Fitted parameters
-        params = record_dict["analysis_results"]["params"]
+        params = df["params"][0]
 
         # Fitted latent variables
-        fitted_latent = record_dict["analysis_results"]["fitted_latent_variables"]
+        fitted_latent = df["latent_variables"][0]
 
         # pull the information
-        ses_idx = "_".join(nwb_name.split("_")[:2])
-        num_trials = df_sess.loc[df_sess["ses_idx"] == ses_idx, "total_trials"].values[
-            0
-        ]  # all trials, 0, 1, 2
-        qvals, choice_kernel, choice_prob = (np.full((2, num_trials), np.nan) for _ in range(3))
         mouse_choice_idx = df_trials_fm.index[
-            (df_trials_fm["ses_idx"] == ses_idx) & (df_trials_fm["choice"] < 2)
+            (df_trials_fm["ses_idx"] == str(sess_i['ses_idx'])) & (df_trials_fm["choice"] < 2)
         ]
 
         qvals = np.array(fitted_latent["q_value"]).astype(float)
@@ -313,7 +254,7 @@ def get_foraging_model_info(
             df_trials_fm.loc[mouse_choice_idx, "L_kernel"] = choice_kernel[0, :-1]
             df_trials_fm.loc[mouse_choice_idx, "R_kernel"] = choice_kernel[1, :-1]
 
-        params["ses_idx"] = ses_idx
+        params["ses_idx"] = str(sess_i['ses_idx'])
         df_sess_params.append(params)
 
     df_sess_params = pd.DataFrame(df_sess_params)
