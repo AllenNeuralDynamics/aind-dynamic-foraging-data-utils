@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 from hdmf_zarr import NWBZarrIO
 from pynwb import NWBHDF5IO
+from datetime import date
 
 # If we adjust time_in_session, adjust it to this
 SESSION_ALIGNMENT = "goCue_start_time"
@@ -482,10 +483,18 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
         warnings.warn("Response time greater than minimum, something unusual happened")
 
     # Sanity checks
+
+    # prior to 2025/1/1, we did not include manual reward information.
+    # This is a conservative estimate.
+    manual_reward_date_cutoff = date(2025, 1, 1)
+
     rewarded_df = df.query("earned_reward")
-    assert (
-        np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0
-    ), "Rewarded trials without reward time"
+    if not np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0:
+        if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
+            warnings.warn("Rewarded trials without reward time. \
+                This is likely due to manual rewards not being recorded in sessions from 2024")
+        else:
+            raise AssertionError("Rewarded trials without reward time")
 
     assert (
         np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0
@@ -493,15 +502,25 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
 
     earned_df = rewarded_df.query("not extra_reward")
     if not np.all(earned_df["choice_time_in_session"] <= earned_df["reward_time_in_session"]):
-        warnings.warn("Reward before choice time. This is likely due to manual rewards")
+        if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
+            warnings.warn("Reward before choice time. \
+                This is likely due to manual rewards not being recorded in sessions from 2024")
+        else:
+            raise AssertionError("Reward before choice time")
 
     assert np.all(
         rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE
     ), "Rewarded trial with negative choice_time_in_trial"
 
-    assert np.all(
-        np.isnan(df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"])
-    ), "Unrewarded trials with reward time"
+    check_rew_time = np.isnan(
+        df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"]
+    )
+    if not np.all(check_rew_time):
+        if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
+            warnings.warn("Unrewarded trials with reward time. If this was data from 2024, \
+                        this is likely because extra_rewards are not recorded", UserWarning)
+        else:
+            raise AssertionError("Unrewarded trials with reward time")
 
     # Drop columns
     drop_cols += key_from_acq
