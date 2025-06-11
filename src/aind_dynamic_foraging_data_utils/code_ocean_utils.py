@@ -132,7 +132,8 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
 
 def get_all_df_for_nwb(filename_sessions, interested_channels=None):
     """
-    get_all_df_for_nwb gets all the dataframes for the NWB and returns the df_trials, df_events, df_fip
+    get_all_df_for_nwb gets all the dataframes for the NWB and
+    returns the df_trials, df_events, df_fip
 
     Returns:
         df_trials (pd.DataFrame): dataframe with each row a trial from sessions
@@ -152,15 +153,15 @@ def get_all_df_for_nwb(filename_sessions, interested_channels=None):
         print(f"CURRENTLY RUNNING {idx+1}/{len(filename_sessions)}: {ses_idx}")
         print("--------------------------------------------------")
 
-        # Tries to pull out df_trials, df_fip, df_events, otherwise go to next nwb_file
-        
+        # Try to process df_trials, df_fip, df_events, otherwise go to next nwb_file
+
         # Trials
         try:
             df_ses_trials = nwb_utils.create_df_trials(nwb)
             list_df_trials.append(df_ses_trials)
         except AssertionError as e:
             print(f"Skipping {ses_idx} due to assertion error in df_trials: {e}")
-            continue  
+            continue
 
         # FIP
         try:
