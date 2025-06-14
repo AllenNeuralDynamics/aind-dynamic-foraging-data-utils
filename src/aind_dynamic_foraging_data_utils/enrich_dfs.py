@@ -198,8 +198,7 @@ def tidy_df_trials_fip(df_fip, df_trials_fip, col_prefix_signal='data'):
     df_tidy = df_fip.merge(df_exploded, on=['ses_idx', 'timestamps', 'event'], how='left')
     return df_tidy.dropna().reset_index()
 
-# TODO: df_trials_fip has to be cleaned up-- i will need to add a copy of it to output
-# i think previously it was included in case
+
 def remove_tonic_df_fip(df_fip, df_trials, df_trials_fip, col_prefix_signal='data',
                         col_prefix_time='timestamps_in_trial'):
     """
