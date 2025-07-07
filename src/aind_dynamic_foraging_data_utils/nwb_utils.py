@@ -379,8 +379,8 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     key_from_acq = [
         "left_lick_time",
         "right_lick_time",
-        "left_reward_time",
-        "right_reward_time",
+        "left_reward_delivery_time",
+        "right_reward_delivery_time",
     ]
     if adjust_time:
         events = {key: nwb.acquisition[key].timestamps[:] - t0 for key in key_from_acq}
@@ -426,8 +426,8 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                 np.concatenate(
                     [
                         [np.nan],
-                        x["right_reward_time"],
-                        x["left_reward_time"],
+                        x["right_reward_delivery_time"],
+                        x["left_reward_delivery_time"],
                     ]
                 )
             ),
@@ -438,11 +438,11 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     )
 
     # Add annotation of reward types
-    for event in ["right_reward_time", "left_reward_time"]:
+    for event in ["right_reward_delivery_time", "left_reward_delivery_time"]:
         times = events[event]
         data = nwb.acquisition[event].data[:]
         mapper = {x[0]: x[1] for x in zip(times, data)}
-        df[event.split("time")[0] + "type"] = [
+        df[event.split("delivery_time")[0] + "type"] = [
             mapper[x[0]] if len(x) > 0 else np.nan for x in df[event]
         ]
 
