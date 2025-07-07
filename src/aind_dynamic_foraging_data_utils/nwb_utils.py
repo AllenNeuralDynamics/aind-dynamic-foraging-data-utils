@@ -379,8 +379,8 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     key_from_acq = [
         "left_lick_time",
         "right_lick_time",
-        "left_reward_delivery_time",
-        "right_reward_delivery_time",
+        "left_reward_time",
+        "right_reward_time",
     ]
     if adjust_time:
         events = {key: nwb.acquisition[key].timestamps[:] - t0 for key in key_from_acq}
@@ -426,8 +426,8 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                 np.concatenate(
                     [
                         [np.nan],
-                        x["right_reward_delivery_time"],
-                        x["left_reward_delivery_time"],
+                        x["right_reward_time"],
+                        x["left_reward_time"],
                     ]
                 )
             ),
@@ -438,11 +438,11 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     )
 
     # Add annotation of reward types
-    for event in ["right_reward_delivery_time", "left_reward_delivery_time"]:
+    for event in ["right_reward_time", "left_reward_time"]:
         times = events[event]
         data = nwb.acquisition[event].data[:]
         mapper = {x[0]: x[1] for x in zip(times, data)}
-        df[event.split("delivery_time")[0] + "type"] = [
+        df[event.split("time")[0] + "type"] = [
             mapper[x[0]] if len(x) > 0 else np.nan for x in df[event]
         ]
 
@@ -546,7 +546,7 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     # Build list of all event types in acqusition, ignore FIP events (no need for processing folder)
     event_types = set(nwb.acquisition.keys())
 
-    channels = ["G", "R", "Iso"]
+    channels = ["G", "R", "Iso", "G-Iso"]
     fibers = ["0", "1", "2", "3", "4"]
     FIP_prefixes = [f"{c}_{f}" for c in channels for f in fibers]
 
@@ -555,7 +555,7 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
         k for k in event_types if not any(k.startswith(prefix) for prefix in FIP_prefixes)
     }
 
-    event_types -= {"FIP_falling_time", "FIP_rising_time"}
+    event_types -= {"FIP_falling_time", "FIP_rising_time", "FIP_rising_time_raw"}
 
     # Determine time 0 as first go Cue
     if adjust_time:
@@ -645,7 +645,7 @@ def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     # Filter out all fibers
     event_types = {k for k in event_types if any(k.startswith(prefix) for prefix in FIP_prefixes)}
 
-    event_types.add("FIP_falling_time")
+    # event_types.add("FIP_falling_time") #TODO: check if FIP_falling_time is needed
     event_types.add("FIP_rising_time")
 
     # If no FIB data available
