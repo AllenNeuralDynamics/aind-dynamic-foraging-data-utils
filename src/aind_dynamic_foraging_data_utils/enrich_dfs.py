@@ -277,33 +277,37 @@ def enrich_df_trials_fm(df_trials_fm):
     df_trials_fm_enriched = pd.DataFrame()
     models = df_trials_fm['model_name'].unique()
     sessions = np.unique(df_trials_fm['ses_idx'])
+    has_kernel = all([choice+'_kernel' in df_trials_fm.columns for choice in ['L', 'R']])
     for i_iter, (ses_idx, model_name) in enumerate(itertools.product(sessions[:], models)):
         df_ses = df_trials_fm[(df_trials_fm['ses_idx'] == ses_idx) & (df_trials_fm['model_name'] == model_name)]  # noqa: E501
         choices = df_ses.choice.map({0: 'L', 1: 'R', 2: 'I'}).values
         chosen_values = np.nan * np.zeros(len(df_ses))
         unchosen_values = np.nan * np.zeros(len(df_ses))
-        chosen_kernels = np.nan * np.zeros(len(df_ses))
-        unchosen_kernels = np.nan * np.zeros(len(df_ses))
         chosen_probabilities = np.nan * np.zeros(len(df_ses))
         unchosen_probabilities = np.nan * np.zeros(len(df_ses))
         chosen_stay_probabilities = np.nan * np.zeros(len(df_ses))
+        chosen_kernels = np.nan * np.zeros(len(df_ses))
+        unchosen_kernels = np.nan * np.zeros(len(df_ses))
         # chosen_licks = np.nan * np.zeros(len(df_ses))
         for i_idx in range(len(df_ses)):
             choice = choices[i_idx]
             if choice == 'I':  # no models track ignore now
                 chosen_values[i_idx] = np.nan
-                chosen_kernels[i_idx] = np.nan
+                if has_kernel:
+                    chosen_kernels[i_idx] = np.nan
                 chosen_probabilities[i_idx] = np.nan
                 chosen_stay_probabilities[i_idx] = np.nan
                 # chosen_licks[i_idx] = np.nan
             else:
                 chosen_values[i_idx] = df_ses[choice+'_value'].values[i_idx]
-                chosen_kernels[i_idx] = df_ses[choice+'_kernel'].values[i_idx]
+                if has_kernel:
+                    chosen_kernels[i_idx] = df_ses[choice+'_kernel'].values[i_idx]
                 chosen_probabilities[i_idx] = df_ses[choice+'_prob'].values[i_idx]
                 if choice != 'I':
                     unchosen_values[i_idx] = df_ses[{'L': 'R', 'R': 'L'}[choice]+'_value'].values[i_idx]  # noqa: E501
                     unchosen_probabilities[i_idx] = df_ses[{'L': 'R', 'R': 'L'}[choice]+'_prob'].values[i_idx]  # noqa: E501
-                    unchosen_kernels[i_idx] = df_ses[{'L': 'R', 'R': 'L'}[choice]+'_kernel'].values[i_idx]  # noqa: E501
+                    if has_kernel:
+                        unchosen_kernels[i_idx] = df_ses[{'L': 'R', 'R': 'L'}[choice]+'_kernel'].values[i_idx]  # noqa: E501
                     # chosen_licks[i_idx] = df_ses['licks '+choice].values[i_idx]
                 if i_idx < len(df_ses)-1:
                     chosen_stay_probabilities[i_idx] = df_ses[choice+'_prob'].values[i_idx+1]
@@ -320,11 +324,12 @@ def enrich_df_trials_fm(df_trials_fm):
             df_ses.loc[:, 'P_Delta'] = df_ses['P_chosen'].values-df_ses['P_unchosen'].values
             df_ses.loc[:, 'P_change'] = np.concatenate([[0], np.diff(chosen_probabilities)])
 
-            df_ses.loc[:, 'K_chosen'] = chosen_kernels
-            df_ses.loc[:, 'K_unchosen'] = unchosen_kernels
-            df_ses.loc[:, 'K_sum'] = df_ses['L_kernel'].values+df_ses['R_kernel'].values
-            df_ses.loc[:, 'K_Delta'] = df_ses['K_chosen'].values-df_ses['K_unchosen'].values
-            df_ses.loc[:, 'K_change'] = np.concatenate([[0], np.diff(chosen_kernels)])
+            if has_kernel:
+                df_ses.loc[:, 'K_chosen'] = chosen_kernels
+                df_ses.loc[:, 'K_unchosen'] = unchosen_kernels
+                df_ses.loc[:, 'K_sum'] = df_ses['L_kernel'].values+df_ses['R_kernel'].values
+                df_ses.loc[:, 'K_Delta'] = df_ses['K_chosen'].values-df_ses['K_unchosen'].values
+                df_ses.loc[:, 'K_change'] = np.concatenate([[0], np.diff(chosen_kernels)])
 
             df_ses.loc[:, 'Cprobstay'] = chosen_stay_probabilities
             df_ses.loc[:, 'RPE_earned'] = df_ses['earned_reward'].astype(float) - chosen_values
