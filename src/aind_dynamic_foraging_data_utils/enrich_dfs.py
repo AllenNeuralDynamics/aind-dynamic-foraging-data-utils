@@ -293,8 +293,7 @@ def enrich_df_trials_fm(df_trials_fm):
             choice = choices[i_idx]
             if choice == 'I':  # no models track ignore now
                 chosen_values[i_idx] = np.nan
-                if has_kernel:
-                    chosen_kernels[i_idx] = np.nan
+                chosen_kernels[i_idx] = np.nan
                 chosen_probabilities[i_idx] = np.nan
                 chosen_stay_probabilities[i_idx] = np.nan
                 # chosen_licks[i_idx] = np.nan
