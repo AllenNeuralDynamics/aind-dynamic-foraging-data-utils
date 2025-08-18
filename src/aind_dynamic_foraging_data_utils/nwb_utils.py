@@ -44,6 +44,11 @@ def load_nwb_from_filename(filename):
             io = NWBHDF5IO(filename, mode="r")
             nwb = io.read()
             return nwb
+        elif filename.startswith('s3://') and filename.endswith('.nwb'):
+            # s3 file can be opend with ZarrIO in analysis architecture
+            io = NWBZarrIO(filename, mode="r")
+            nwb = io.read()
+            return nwb
         else:
             raise FileNotFoundError(filename)
     else:
