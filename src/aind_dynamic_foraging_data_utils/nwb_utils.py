@@ -36,7 +36,7 @@ def load_nwb_from_filename(filename):
     """
 
     if type(filename) is str:
-        if os.path.isdir(filename):
+        if os.path.isdir(filename) or (filename.startswith('s3://') and filename.endswith('.nwb')):
             io = NWBZarrIO(filename, mode="r")
             nwb = io.read()
             return nwb
