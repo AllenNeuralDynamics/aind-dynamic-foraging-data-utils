@@ -43,8 +43,8 @@ def get_subject_assets(subject_id, processed=True):
             {"session": None},
             {
                 "session": {"$exists": True, "$ne": None},
-                "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"}
-            }
+                "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"},
+            },
         ]
     }
     # Query based on subject id
@@ -53,7 +53,7 @@ def get_subject_assets(subject_id, processed=True):
             client.retrieve_docdb_records(
                 filter_query={
                     "name": {"$regex": "^behavior_{}_.*processed_[0-9-_]*$".format(subject_id)},
-                    **task_filter
+                    **task_filter,
                 }
             )
         )
@@ -62,7 +62,7 @@ def get_subject_assets(subject_id, processed=True):
             client.retrieve_docdb_records(
                 filter_query={
                     "name": {"$regex": "^behavior_{}_[0-9-_]*$".format(subject_id)},
-                    **task_filter
+                    **task_filter,
                 }
             )
         )
@@ -83,6 +83,12 @@ def get_subject_assets(subject_id, processed=True):
         warnings.warn("Duplicate session entries in docDB")
         for index, row in duplicated.iterrows():
             print("duplicated: {}".format(row["name"]))
+
+    # Make code ocean ID a column
+    results_no_duplicates["code_ocean_asset_id"] = [
+        link["Code Ocean"][0] if "Code Ocean" in link else ""
+        for link in results_no_duplicates["external_links"]
+    ]
 
     return results_no_duplicates
 
@@ -224,8 +230,9 @@ def get_foraging_model_info(
     df_sess_params = []
     for index, sess_i in df_sess.iterrows():
         df = get_mle_model_fitting(
-            subject_id=str(sess_i['subject_id']), session_date=str(sess_i['session_date']),
-            agent_alias=model_name
+            subject_id=str(sess_i["subject_id"]),
+            session_date=str(sess_i["session_date"]),
+            agent_alias=model_name,
         )
 
         if df is None:
@@ -239,7 +246,7 @@ def get_foraging_model_info(
 
         # pull the information
         mouse_choice_idx = df_trials_fm.index[
-            (df_trials_fm["ses_idx"] == str(sess_i['ses_idx'])) & (df_trials_fm["choice"] < 2)
+            (df_trials_fm["ses_idx"] == str(sess_i["ses_idx"])) & (df_trials_fm["choice"] < 2)
         ]
 
         qvals = np.array(fitted_latent["q_value"]).astype(float)
@@ -255,7 +262,7 @@ def get_foraging_model_info(
             df_trials_fm.loc[mouse_choice_idx, "L_kernel"] = choice_kernel[0, :-1]
             df_trials_fm.loc[mouse_choice_idx, "R_kernel"] = choice_kernel[1, :-1]
 
-        params["ses_idx"] = str(sess_i['ses_idx'])
+        params["ses_idx"] = str(sess_i["ses_idx"])
         df_sess_params.append(params)
 
     df_sess_params = pd.DataFrame(df_sess_params)

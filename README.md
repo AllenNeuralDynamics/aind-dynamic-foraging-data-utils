@@ -85,7 +85,7 @@ import aind_dynamic_foraging_data_utils.code_ocean_utils as cou
 results = cou.get_subject_assets(my_id)
 ```
 
-The 'external links' column gives you the data asset ID's. 
+The 'code_ocean_asset_id' column gives you the data asset ID's on Code Ocean. the 'id' column is the docDB id.  
 
 To attach a long list of data, simply call 
 
