@@ -144,10 +144,10 @@ def check_data_assets(co_assets):
     """
     co_assets, a list of DataAssetAttachResults, produced by attach_data()
     """
-    print("checking data assets ... ")
-    while not all([x.ready for x in co_assets]):
-        time.sleep(0.001)
-    print("all data assets are ready")
+    if all([x.ready for x in co_assets]):
+        print("all data assets are ready")
+    else:
+        print('some data assets are not read')
 
 
 def add_data_asset_path(results):
