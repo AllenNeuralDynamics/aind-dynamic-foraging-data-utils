@@ -146,8 +146,16 @@ def check_data_assets(co_assets):
     """
     print("checking data assets ... ")
     while not all([x.ready for x in co_assets]):
-        time.sleep(0.05)
+        time.sleep(0.001)
     print("all data assets are ready")
+
+
+def add_data_asset_path(results):
+    results["data_path"] = [
+        os.path.join("data", x["name"], "nwb", x["session_name"] + ".nwb")
+        for index, x in results.iterrows()
+    ]
+    return results
 
 
 def get_all_df_for_nwb(filename_sessions, interested_channels=None):
