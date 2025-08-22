@@ -1,10 +1,11 @@
 """
 Important utility functions for formatting the data
     get_subject_assets
+    generate_data_asset_attach_params
     attach_data
+    check_data_assets
+    add_data_asset_path
     get_all_df_for_nwb
-
-    check_avail_model_by_nwb_name
     get_foraging_model_info
 """
 
@@ -13,11 +14,12 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from aind_analysis_arch_result_access.han_pipeline import get_mle_model_fitting
+from aind_data_access_api.document_db import MetadataDbClient
 from codeocean import CodeOcean
 from codeocean.data_asset import DataAssetAttachParams
-from aind_data_access_api.document_db import MetadataDbClient
+
 from aind_dynamic_foraging_data_utils import nwb_utils
-from aind_analysis_arch_result_access.han_pipeline import get_mle_model_fitting
 
 
 def get_subject_assets(subject_id, processed=True):
@@ -30,7 +32,7 @@ def get_subject_assets(subject_id, processed=True):
 
     Example
     results = get_subject_assets(my_id)
-    co_assets = attach_data(results['_id'].values)
+    co_assets = attach_data(results['code_ocean_asset_id'].values)
     """
 
     # Create metadata client
@@ -75,7 +77,7 @@ def get_subject_assets(subject_id, processed=True):
     # look for duplicate entries, taking the last by processing time
     results["session_name"] = [x.split("_processed")[0] for x in results["name"]]
     results = results.sort_values(by="name")
-    results_no_duplicates = results.drop_duplicates(subset="session_name", keep="last")
+    results_no_duplicates = results.drop_duplicates(subset="session_name", keep="last").copy()
 
     # If there were duplicates, make a warning and print the duplicates
     if len(results) != len(results_no_duplicates):
@@ -108,31 +110,88 @@ def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
     return data_assets
 
 
-def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
+def attach_data(data_asset_IDs, df=None, token_name="CUSTOM_KEY"):
     """
     attach_data attaches a list of data_asset_ID to the capsule.
     data_asset_IDs: list of data asset IDs, i.e. the 16 hash string for the data asset in CO.
+    df: a dataframe returing the result of a docDB querying, used for debugging failed attachments
     token_name: the name of the token in the environment variable. Default is CUSTOM_KEY.
                 see more info here:
                 https://docs.codeocean.com/user-guide/code-ocean-api/authentication#to-create-an-access-token
 
     Note that the list of data_asset_IDs should be <100 or you may risk CO crashing.
-    example: attach_data(da_data['processed_CO_dataID'].to_list())
+    Example
+    results = get_subject_assets(my_id)
+    co_assets = attach_data(results['code_ocean_asset_id'].values,df=results)
     """
+
+    # Check for too many assets
     if len(data_asset_IDs) > 100:
         warnings.warn("list of data_asset_IDs are way too long! likely will crash CO. ")
         return
+
+    # Get asset attach params
     data_assets = generate_data_asset_attach_params(data_asset_IDs, mount_point=None)
+
+    # Configure api
     token = os.getenv(token_name)
     if not token:
-        warnings.warn("no token created. please create token")
+        warnings.warn("no token found. please create token")
         return
     client = CodeOcean(domain="https://codeocean.allenneuraldynamics.org", token=token)
     capsule_id = os.getenv("CO_CAPSULE_ID")
-    results = client.capsules.attach_data_assets(
-        capsule_id=capsule_id,
-        attach_params=data_assets,
-    )
+
+    # Try to attach all assets
+    try:
+        results = client.capsules.attach_data_assets(
+            capsule_id=capsule_id,
+            attach_params=data_assets,
+        )
+        return results
+    except Exception as e:
+        print(e)
+        print("Failed, trying individually")
+
+    # Try to attach assets one by one (slow)
+    for asset in data_assets:
+        try:
+            results = client.capsules.attach_data_assets(
+                capsule_id=capsule_id,
+                attach_params=[asset],
+            )
+        except Exception as e:  # noqa: F841
+            if df is not None:
+                print(
+                    "Could not attach this asset: {}".format(
+                        df.query("code_ocean_asset_id == @e.data[0]")["name"].values[0]
+                    )
+                )
+    return results
+
+
+def check_data_assets(co_assets, data_asset_IDs):
+    """
+    co_assets, a list of DataAssetAttachResults, produced by attach_data()
+    This function is delicate because CO is strange about "ready",
+    but its a useful quick check
+    """
+    if all([x.ready for x in co_assets if x.id in data_asset_IDs]):
+        print("all data assets are ready")
+    else:
+        print("some data assets are not ready")
+
+
+def add_data_asset_path(results):
+    """
+    Adds the filepath to the dataframe
+    Example
+    results = get_subject_assets(my_id)
+    results = add_data_asset_path(results)
+    """
+    results["data_path"] = [
+        os.path.join("data", x["name"], "nwb", x["session_name"] + ".nwb")
+        for index, x in results.iterrows()
+    ]
     return results
 
 
