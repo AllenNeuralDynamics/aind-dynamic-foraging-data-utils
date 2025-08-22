@@ -140,28 +140,33 @@ def attach_data(data_asset_IDs, df=None, token_name="CUSTOM_KEY"):
         )
         return results
     except Exception as e:
-        print('Failed, trying individually')
         print(e)
+        print("Failed, trying individually")
 
     for asset in data_assets:
         try:
             results = client.capsules.attach_data_assets(
-                capsule_id = capsule_id,
-                attach_params = [asset],
+                capsule_id=capsule_id,
+                attach_params=[asset],
             )
         except Exception as e:
             if df is not None:
-                print(df.query('code_ocean_asset_id == @e.data[0]')['name'])
+                print(
+                    "Could not attach this asset: {}".format(
+                        df.query("code_ocean_asset_id == @e.data[0]")["name"].values[0]
+                    )
+                )
     return results
 
-def check_data_assets(co_assets,data_asset_IDs):
+
+def check_data_assets(co_assets, data_asset_IDs):
     """
     co_assets, a list of DataAssetAttachResults, produced by attach_data()
     """
     if all([x.ready for x in co_assets if x.id in data_asset_IDs]):
         print("all data assets are ready")
     else:
-        print('some data assets are not ready')
+        print("some data assets are not ready")
 
 
 def add_data_asset_path(results):
