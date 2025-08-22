@@ -110,7 +110,7 @@ def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
     return data_assets
 
 
-def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
+def attach_data(data_asset_IDs, df=None, token_name="CUSTOM_KEY"):
     """
     attach_data attaches a list of data_asset_ID to the capsule.
     data_asset_IDs: list of data asset IDs, i.e. the 16 hash string for the data asset in CO.
@@ -142,7 +142,6 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
     except Exception as e:
         print('Failed, trying individually')
         print(e)
-        return e
 
     for asset in data_assets:
         try:
@@ -151,7 +150,8 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
                 attach_params = [asset],
             )
         except Exception as e:
-            continue
+            if df is not None:
+                print(df.query('code_ocean_asset_id == @e.data[0]')['name'])
     return results
 
 def check_data_assets(co_assets,data_asset_IDs):
