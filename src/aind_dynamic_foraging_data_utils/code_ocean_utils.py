@@ -10,7 +10,6 @@ Important utility functions for formatting the data
 """
 
 import os
-import time
 import warnings
 
 import numpy as np
@@ -160,7 +159,7 @@ def attach_data(data_asset_IDs, df=None, token_name="CUSTOM_KEY"):
                 capsule_id=capsule_id,
                 attach_params=[asset],
             )
-        except Exception as e:
+        except Exception as e:  # noqa: F841
             if df is not None:
                 print(
                     "Could not attach this asset: {}".format(
