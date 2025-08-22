@@ -139,16 +139,19 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
             attach_params=data_assets,
         )
         return results
-    except:
-        for asset in data_assets:
-            try:
-                results = client.capsules.attach_data_assets(
-                    capsule_id = capsule_id,
-                    attach_params = [asset],
-                )
-            except Exception as e:
-                print(e)
+    except Exception as e:
+        print('Failed, trying individually')
+        print(e)
 
+    for asset in data_assets:
+        try:
+            results = client.capsules.attach_data_assets(
+                capsule_id = capsule_id,
+                attach_params = [asset],
+            )
+        except Exception as e:
+            continue
+    return results
 
 def check_data_assets(co_assets,data_asset_IDs):
     """
