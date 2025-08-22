@@ -133,11 +133,21 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
         return
     client = CodeOcean(domain="https://codeocean.allenneuraldynamics.org", token=token)
     capsule_id = os.getenv("CO_CAPSULE_ID")
-    results = client.capsules.attach_data_assets(
-        capsule_id=capsule_id,
-        attach_params=data_assets,
-    )
-    return results
+    try:
+        results = client.capsules.attach_data_assets(
+            capsule_id=capsule_id,
+            attach_params=data_assets,
+        )
+        return results
+    except:
+        for asset in data_assets:
+            try:
+                results = client.capsules.attach_data_assets(
+                    capsule_id = capsule_id,
+                    attach_params = [asset],
+                )
+            except Exception as e:
+                print(e)
 
 
 def check_data_assets(co_assets,data_asset_IDs):
