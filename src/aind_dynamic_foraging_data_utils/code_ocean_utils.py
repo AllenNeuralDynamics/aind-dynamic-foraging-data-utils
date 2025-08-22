@@ -13,11 +13,12 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from aind_analysis_arch_result_access.han_pipeline import get_mle_model_fitting
+from aind_data_access_api.document_db import MetadataDbClient
 from codeocean import CodeOcean
 from codeocean.data_asset import DataAssetAttachParams
-from aind_data_access_api.document_db import MetadataDbClient
+
 from aind_dynamic_foraging_data_utils import nwb_utils
-from aind_analysis_arch_result_access.han_pipeline import get_mle_model_fitting
 
 
 def get_subject_assets(subject_id, processed=True):
@@ -30,7 +31,7 @@ def get_subject_assets(subject_id, processed=True):
 
     Example
     results = get_subject_assets(my_id)
-    co_assets = attach_data(results['_id'].values)
+    co_assets = attach_data(results['code_ocean_asset_id'].values)
     """
 
     # Create metadata client
