@@ -151,7 +151,7 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
             )
         except Exception as e:
             continue
-    return results
+    return e
 
 def check_data_assets(co_assets,data_asset_IDs):
     """
