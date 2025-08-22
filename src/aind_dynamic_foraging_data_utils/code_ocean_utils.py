@@ -8,6 +8,7 @@ Important utility functions for formatting the data
     get_foraging_model_info
 """
 
+import time
 import os
 import warnings
 
@@ -137,6 +138,16 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
         attach_params=data_assets,
     )
     return results
+
+
+def check_data_assets(co_assets):
+    """
+    co_assets, a list of DataAssetAttachResults, produced by attach_data()
+    """
+    print("checking data assets ... ")
+    while not all([x.ready for x in co_assets]):
+        time.sleep(0.05)
+    print("all data assets are ready")
 
 
 def get_all_df_for_nwb(filename_sessions, interested_channels=None):
