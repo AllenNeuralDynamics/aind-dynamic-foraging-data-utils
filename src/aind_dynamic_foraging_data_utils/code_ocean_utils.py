@@ -142,6 +142,7 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
     except Exception as e:
         print('Failed, trying individually')
         print(e)
+        return e
 
     for asset in data_assets:
         try:
@@ -151,7 +152,7 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
             )
         except Exception as e:
             continue
-    return e
+    return results
 
 def check_data_assets(co_assets,data_asset_IDs):
     """
