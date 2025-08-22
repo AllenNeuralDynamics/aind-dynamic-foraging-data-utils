@@ -140,14 +140,14 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
     return results
 
 
-def check_data_assets(co_assets):
+def check_data_assets(co_assets,data_asset_IDs):
     """
     co_assets, a list of DataAssetAttachResults, produced by attach_data()
     """
-    if all([x.ready for x in co_assets]):
+    if all([x.ready for x in co_assets if x.id in data_asset_IDs]):
         print("all data assets are ready")
     else:
-        print('some data assets are not read')
+        print('some data assets are not ready')
 
 
 def add_data_asset_path(results):
