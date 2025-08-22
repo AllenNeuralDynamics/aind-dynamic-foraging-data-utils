@@ -75,7 +75,7 @@ def get_subject_assets(subject_id, processed=True):
     # look for duplicate entries, taking the last by processing time
     results["session_name"] = [x.split("_processed")[0] for x in results["name"]]
     results = results.sort_values(by="name")
-    results_no_duplicates = results.drop_duplicates(subset="session_name", keep="last")
+    results_no_duplicates = results.drop_duplicates(subset="session_name", keep="last").copy()
 
     # If there were duplicates, make a warning and print the duplicates
     if len(results) != len(results_no_duplicates):
