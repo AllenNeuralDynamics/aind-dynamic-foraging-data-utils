@@ -165,7 +165,8 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
 
 def check_data_assets(co_assets, data_asset_IDs):
     """
-    co_assets, a list of DataAssetAttachResults, produced by attach_data()
+    co_assets: a list of DataAssetAttachResults, produced by attach_data()
+    data_asset_IDs: a list of code ocean Data Assets, passed into attach_data()
     This function is delicate because CO is strange about "ready",
     but its a useful quick check
     """
