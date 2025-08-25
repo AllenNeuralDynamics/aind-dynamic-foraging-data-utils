@@ -110,11 +110,10 @@ def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
     return data_assets
 
 
-def attach_data(data_asset_IDs, df=None, token_name="CUSTOM_KEY"):
+def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
     """
     attach_data attaches a list of data_asset_ID to the capsule.
     data_asset_IDs: list of data asset IDs, i.e. the 16 hash string for the data asset in CO.
-    df: a dataframe returing the result of a docDB querying, used for debugging failed attachments
     token_name: the name of the token in the environment variable. Default is CUSTOM_KEY.
                 see more info here:
                 https://docs.codeocean.com/user-guide/code-ocean-api/authentication#to-create-an-access-token
@@ -122,12 +121,12 @@ def attach_data(data_asset_IDs, df=None, token_name="CUSTOM_KEY"):
     Note that the list of data_asset_IDs should be <100 or you may risk CO crashing.
     Example
     results = get_subject_assets(my_id)
-    co_assets = attach_data(results['code_ocean_asset_id'].values,df=results)
+    co_assets = attach_data(results['code_ocean_asset_id'].values)
     """
 
     # Check for too many assets
     if len(data_asset_IDs) > 100:
-        warnings.warn("list of data_asset_IDs are way too long! likely will crash CO. ")
+        warnings.warn("Attaching more than 100 data assets may crash Code Ocean")
         return
 
     # Get asset attach params
@@ -150,7 +149,7 @@ def attach_data(data_asset_IDs, df=None, token_name="CUSTOM_KEY"):
         return results
     except Exception as e:
         print(e)
-        print("Failed, trying individually")
+        print("Attaching assets in a batch failed, trying individually")
 
     # Try to attach assets one by one (slow)
     for asset in data_assets:
@@ -159,13 +158,8 @@ def attach_data(data_asset_IDs, df=None, token_name="CUSTOM_KEY"):
                 capsule_id=capsule_id,
                 attach_params=[asset],
             )
-        except Exception as e:  # noqa: F841
-            if df is not None:
-                print(
-                    "Could not attach this asset: {}".format(
-                        df.query("code_ocean_asset_id == @e.data[0]")["name"].values[0]
-                    )
-                )
+        except Exception as e:
+            print("Could not attach this asset: {}".format(e.data[0]))
     return results
 
 
