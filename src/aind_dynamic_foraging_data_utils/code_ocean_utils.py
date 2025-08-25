@@ -126,7 +126,9 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
 
     # Check for too many assets
     if len(data_asset_IDs) > 100:
-        warnings.warn("Attaching more than 100 data assets may crash Code Ocean")
+        warnings.warn(
+            "Attaching more than 100 data assets at one time may crash Code Ocean. Please batch data into 100 sessions per call"
+        )
         return
 
     # Get asset attach params
