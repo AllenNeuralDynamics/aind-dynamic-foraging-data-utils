@@ -89,11 +89,13 @@ The 'code_ocean_asset_id' column gives you the data asset ID's on Code Ocean. th
 
 To attach a long list of data, simply call 
 
+
 ```
-attach_data(da_data['processed_CO_dataID'].to_list())
+cou.attach_data(results['code_ocean_asset_id'].values)
+results = co.add_data_asset_path(results)
 ```
 
-with da_data as a CSV here, and 'processed_CO_dataID' the 16 digit data asset ID from code ocean. 
+with results as the dataframe from 'get_subject_assets', and 'code_ocean_asset_id' the 16 digit data asset ID from code ocean. 
 
 
 To get the dataframes from the NWBs, you can call function 
