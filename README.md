@@ -10,7 +10,7 @@
 
 
 
-## Scope
+# Scope
 Purpose: Ingests NWB and spits out dataframes with the relevant information. Focused on dynamic foraging. Other tasks can branch and build task-specific utils.
 Inputs are nwbs, outputs are dataframes (tidy and not)
 Dependencies: xarray (includes numpy and pandas), scikit-learn (includes scipy), matplotlib
@@ -18,7 +18,7 @@ Dependencies: xarray (includes numpy and pandas), scikit-learn (includes scipy),
 
 
 
-## Installation
+# Installation
 To use the software, in the root directory, run
 ```bash
 pip install -e .
@@ -29,9 +29,9 @@ To develop the code, run
 pip install -e .[dev]
 ```
 
-## Usage
+# Usage
 
-### Accessing data from an NWB file
+## Accessing data from an NWB file
 To load an NWB file
 ```
 import aind_dynamic_foraging_data_utils.nwb_utils as nwb_utils
@@ -55,7 +55,7 @@ fip_df = nwb_utils.create_fib_df(nwb)
 
 By default, all of these functions adjust timestamps such that t(0) is the time of the first go cue. If you wish to disable this feature, use `adjust_time=False`
 
-### Time alignment tools
+## Time alignment tools
 To align a data variable to a set of timepoints and create an event triggered response use the alignment module. For example to align FIP data to each go cue:
 
 ```
@@ -73,18 +73,38 @@ etr = alignment.event_triggered_response(
 ```
 
 
-### Code ocean utility code
+## Code ocean utility code
 
 To attach data, you'll want to [create a token on code ocean ](https://docs.codeocean.com/user-guide/code-ocean-api/authentication#to-create-an-access-token) with all read/write permissions. Make sure to attach your token on your capsule. 
 
 Then, you should be able to access the token via `os.getenv(token_name)`. 
 
+### Get list of assets
 To get a list of code ocean assets for a subject
 ```
 import aind_dynamic_foraging_data_utils.code_ocean_utils as cou
 results = cou.get_subject_assets(my_id)
 ```
 
+Users can give a list of required data modalities
+```
+import aind_dynamic_foraging_data_utils.code_ocean_utils as co
+# FIP data
+results = co.get_subject_assets(<subject_id>, modality=['fib'])
+
+# FIP and behavior-videos
+results = co.get_subject_assets(<subject_id>, modality=['fib','behavior-videos'])
+
+# any modalities (default)
+results = co.get_subject_assets(<subject_id>, modality=[])
+```
+
+Or supply an additional filter string
+```
+results = co.get_subject_assets(<subject_id>, extra_filter = <my docdb query string>)
+```
+
+### Attach data
 The 'code_ocean_asset_id' column gives you the data asset ID's on Code Ocean. the 'id' column is the docDB id.  
 
 To attach a long list of data, simply call 
@@ -97,7 +117,7 @@ results = co.add_data_asset_path(results)
 
 with results as the dataframe from 'get_subject_assets', and 'code_ocean_asset_id' the 16 digit data asset ID from code ocean. 
 
-
+### Load data
 To get the dataframes from the NWBs, you can call function 
 
 ```
@@ -146,7 +166,7 @@ get_foraging_model_info(df_trials, df_sess, nwb_name_for_models, loc = SAVED_LOC
 df_trials and df_sess are dataframes created from `get_all_df_for_nwb` and `nwb_name_for_models` formatted the same way for `check_avail_model_by_nwb_name`. 
 
 
-## Contributing
+# Contributing
 
 ### Linters and testing
 
