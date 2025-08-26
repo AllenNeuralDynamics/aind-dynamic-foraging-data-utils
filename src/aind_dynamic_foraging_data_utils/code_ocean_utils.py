@@ -22,7 +22,7 @@ from codeocean.data_asset import DataAssetAttachParams
 from aind_dynamic_foraging_data_utils import nwb_utils
 
 
-def get_subject_assets(subject_id, processed=True, modality=[], extra_filter={}):
+def get_subject_assets(subject_id, processed=True, modality=["behavior"], extra_filter={}):
     """
     Returns the docDB results for a subject. If duplicate entries exist, take the last
     based on processing time. Skips pavlovian task.
