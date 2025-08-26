@@ -22,13 +22,16 @@ from codeocean.data_asset import DataAssetAttachParams
 from aind_dynamic_foraging_data_utils import nwb_utils
 
 
-def get_subject_assets(subject_id, processed=True):
+def get_subject_assets(subject_id, processed=True, modality=[], extra_filter={}):
     """
     Returns the docDB results for a subject. If duplicate entries exist, take the last
     based on processing time. Skips pavlovian task.
 
     subject_id (str or int) subject id to get assets for from docDB
     processed (bool) if True, look for processed assets. If False, look for raw assets
+    modality (list of strings), required data modality. If empty list, does not filter
+        modalities should be the abbreviations: behavior, behavior-videos, fib
+    extra_filter (dict), docdb query
 
     Example
     results = get_subject_assets(my_id)
@@ -49,6 +52,16 @@ def get_subject_assets(subject_id, processed=True):
             },
         ]
     }
+
+    if len(modality) > 0:
+        modality_filter = {"$and": []}
+        for m in modality:
+            modality_filter["$and"].append(
+                {"data_description.modality.abbreviation": {"$regex": m}}
+            )
+    else:
+        modality_filter = {}
+
     # Query based on subject id
     if processed:
         results = pd.DataFrame(
@@ -56,6 +69,8 @@ def get_subject_assets(subject_id, processed=True):
                 filter_query={
                     "name": {"$regex": "^behavior_{}_.*processed_[0-9-_]*$".format(subject_id)},
                     **task_filter,
+                    **modality_filter,
+                    **extra_filter,
                 }
             )
         )
@@ -65,6 +80,8 @@ def get_subject_assets(subject_id, processed=True):
                 filter_query={
                     "name": {"$regex": "^behavior_{}_[0-9-_]*$".format(subject_id)},
                     **task_filter,
+                    **modality_filter,
+                    **extra_filter,
                 }
             )
         )
