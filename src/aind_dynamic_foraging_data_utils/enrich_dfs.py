@@ -1,9 +1,13 @@
 """
 Important utility functions for enriching the dataframes
 
-    enrich_df_trials_fm
-    get_df_fip_trials
+    extract_time_window
+    extract_signal_window
+    enrich_fip_in_df_trials
+    zscore_fip
+    tidy_df_trials_fip
     remove_tonic_df_fip
+    enrich_df_trials_fm
 """
 
 import itertools
@@ -153,6 +157,9 @@ def zscore_fip(df_fip):
 
     returns
     df_fip_z: dataframe with additional column "data_z" with z-scored signal
+
+    example:
+    nwb.df_fip = zscore_fip(nwb.df_fip)
     """
     df_fip_z = df_fip.copy()
     df_fip_z.loc[:, "data_z"] = df_fip_z.groupby(["ses_idx", "event"])["data"].transform(
