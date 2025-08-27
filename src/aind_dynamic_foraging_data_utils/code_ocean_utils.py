@@ -120,8 +120,17 @@ def get_assets(subjects=[], processed=True, task=[], modality=["behavior"], extr
 
     # Query based on subject id
     if len(subjects) == 0:
+        print("Query will be slow without explicit subject ids")
         subject_filter = {
             "name": {"$regex": "^behavior_[0-9]*{}$".format(processed_string)},
+        }
+        # Return only essential information for performance
+        projection = {
+            "name": 1,
+            "session": 1,
+            "session_name": 1,
+            "external_links": 1,
+            "subject.subject_id": 1,
         }
     else:
         subject_filter = {
@@ -131,6 +140,8 @@ def get_assets(subjects=[], processed=True, task=[], modality=["behavior"], extr
                 + "){}$".format(processed_string)
             },
         }
+        # Return all information
+        projection = None
 
     # Query
     results = pd.DataFrame(
@@ -140,7 +151,8 @@ def get_assets(subjects=[], processed=True, task=[], modality=["behavior"], extr
                 **task_filter,
                 **modality_filter,
                 **extra_filter,
-            }
+            },
+            projection=projection,
         )
     )
 
