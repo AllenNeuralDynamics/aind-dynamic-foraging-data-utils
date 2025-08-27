@@ -22,13 +22,16 @@ from codeocean.data_asset import DataAssetAttachParams
 from aind_dynamic_foraging_data_utils import nwb_utils
 
 
-def get_subject_assets(subject_id, processed=True, modality=["behavior"], extra_filter={}):
+def get_subject_assets(subject_id, processed=True, task=[], modality=["behavior"], extra_filter={}):
     """
     Returns the docDB results for a subject. If duplicate entries exist, take the last
     based on processing time. Skips pavlovian task.
 
     subject_id (str or int) subject id to get assets for from docDB
     processed (bool) if True, look for processed assets. If False, look for raw assets
+    task (list of strings), if empty, include all task variants. If not empty, only include
+        task variants listed: Uncoupled Baiting, Coupled Baiting, Uncoupled Without Baiting,
+        Coupled Without Baiting
     modality (list of strings), required data modality. If empty list, does not filter
         modalities should be the abbreviations: behavior, behavior-videos, fib
     extra_filter (dict), docdb query
@@ -53,10 +56,21 @@ def get_subject_assets(subject_id, processed=True, modality=["behavior"], extra_
         host="api.allenneuraldynamics.org", database="metadata_index", collection="data_assets"
     )
 
-    task_filter = {
-        "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"},
-    }
+    # Filter by task
+    if len(task) > 0:
+        task_filter = {"$or": []}
+        for t in task:
+            task_filter["$or"].append(
+                {
+                    "session.session_type": {"$regex": "^{}".format(t)},
+                }
+            )
+    else:
+        task_filter = {
+            "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"},
+        }
 
+    # Filter by data modality
     if len(modality) > 0:
         modality_filter = {"$and": []}
         for m in modality:
