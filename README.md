@@ -104,6 +104,11 @@ Or supply an additional filter string
 results = co.get_subject_assets(<subject_id>, extra_filter = <my docdb query string>)
 ```
 
+Or filter by a task type:
+```
+results = co.get_subject_assets(<subject_id>, task=['Uncoupled Baiting', 'Coupled Baiting'])
+```
+
 ### Attach data
 The 'code_ocean_asset_id' column gives you the data asset ID's on Code Ocean. the 'id' column is the docDB id.  
 
