@@ -36,6 +36,16 @@ def get_subject_assets(subject_id, processed=True, modality=["behavior"], extra_
     Example
     results = get_subject_assets(my_id)
     co_assets = attach_data(results['code_ocean_asset_id'].values)
+
+    To filter by stage:
+    stage_filter = {
+        "session.stimulus_epochs.output_parameters.task_parameters.stage_in_use":
+        {"$regex" :"STAGE_FINAL"}
+        }
+    Note, until backfilling is done this information is missing in older data, see
+    this issue for progress and details:
+    https://github.com/AllenNeuralDynamics/aind-data-migration-scripts/issues/374
+
     """
 
     # Create metadata client
@@ -44,13 +54,7 @@ def get_subject_assets(subject_id, processed=True, modality=["behavior"], extra_
     )
 
     task_filter = {
-        "$or": [
-            {"session": None},
-            {
-                "session": {"$exists": True, "$ne": None},
-                "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"},
-            },
-        ]
+        "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"},
     }
 
     if len(modality) > 0:
@@ -109,7 +113,7 @@ def get_subject_assets(subject_id, processed=True, modality=["behavior"], extra_
         for link in results_no_duplicates["external_links"]
     ]
 
-    return results_no_duplicates
+    return results_no_duplicates.reset_index(drop=True)
 
 
 def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
