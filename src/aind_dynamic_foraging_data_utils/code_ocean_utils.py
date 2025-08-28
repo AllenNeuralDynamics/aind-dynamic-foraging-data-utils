@@ -31,9 +31,9 @@ def get_subject_assets(subject_id, **kwargs):
 
     subject_id (str or int) subject id to get assets for from docDB
     processed (bool) if True, look for processed assets. If False, look for raw assets
-    task (list of strings), if empty, include all task variants. If not empty, only include
-        task variants listed: Uncoupled Baiting, Coupled Baiting, Uncoupled Without Baiting,
-        Coupled Without Baiting
+    task (list of strings), if empty, include all task variants: Uncoupled Baiting,
+        Coupled Baiting, Uncoupled Without Baiting, Coupled Without Baiting.
+        If not empty, only include the task variants provided.
     modality (list of strings), required data modality. If empty list, does not filter
         modalities should be the abbreviations: behavior, behavior-videos, fib
     extra_filter (dict), docdb query
@@ -62,9 +62,9 @@ def get_assets(subjects=[], processed=True, task=[], modality=["behavior"], extr
 
     subjects (a list of strs or ints) subject ids to get assets for from docDB
     processed (bool) if True, look for processed assets. If False, look for raw assets
-    task (list of strings), if empty, include all task variants. If not empty, only include
-        task variants listed: Uncoupled Baiting, Coupled Baiting, Uncoupled Without Baiting,
-        Coupled Without Baiting
+    task (list of strings), if empty, include all task variants: Uncoupled Baiting,
+        Coupled Baiting, Uncoupled Without Baiting, Coupled Without Baiting.
+        If not empty, only include the task variants provided.
     modality (list of strings), required data modality. If empty list, does not filter
         modalities should be the abbreviations: behavior, behavior-videos, fib
     extra_filter (dict), docdb query
