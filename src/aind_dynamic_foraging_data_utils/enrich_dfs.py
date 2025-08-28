@@ -149,22 +149,22 @@ def enrich_fip_in_df_trials(df_fip, df_trials):
     return (df_fip_z, df_trials_fip)
 
 
-def zscore_fip(df_fip):
+def zscore_fip(df_fip, data_col="data"):
     """
     z-score FIP signal separately for each channel and session
     df_fip: dataframe of FIP data, must contain signal in "data" column, channels
         separated by "event", and sessions separated by "ses_idx"
-
+    data_col (str): name of the column in df_fip to be zscored
     returns
-    df_fip_z: dataframe with additional column "data_z" with z-scored signal
+    df_fip_z: dataframe with additional column "<data_col>_z" with z-scored signal
 
     example:
     nwb.df_fip = zscore_fip(nwb.df_fip)
     """
     df_fip_z = df_fip.copy()
-    df_fip_z.loc[:, "data_z"] = df_fip_z.groupby(["ses_idx", "event"])["data"].transform(
-        lambda x: zscore(x, ddof=1, nan_policy="omit")
-    )
+    df_fip_z.loc[:, "{}_z".format(data_col)] = df_fip_z.groupby(["ses_idx", "event"])[
+        data_col
+    ].transform(lambda x: zscore(x, ddof=1, nan_policy="omit"))
     return df_fip_z
 
 
