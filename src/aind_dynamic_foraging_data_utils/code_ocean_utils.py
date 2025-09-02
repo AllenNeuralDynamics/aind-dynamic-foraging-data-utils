@@ -35,7 +35,8 @@ def get_subject_assets(subject_id, **kwargs):
         Coupled Baiting, Uncoupled Without Baiting, Coupled Without Baiting.
         If not empty, only include the task variants provided.
     modality (list of strings), required data modality. If empty list, does not filter
-        modalities should be the abbreviations: behavior, behavior-videos, fib
+        modalities should the data modality abbreviations, for example: behavior,
+        behavior-videos, fib, ecephys
     extra_filter (dict), docdb query
 
     Example
@@ -66,7 +67,8 @@ def get_assets(subjects=[], processed=True, task=[], modality=["behavior"], extr
         Coupled Baiting, Uncoupled Without Baiting, Coupled Without Baiting.
         If not empty, only include the task variants provided.
     modality (list of strings), required data modality. If empty list, does not filter
-        modalities should be the abbreviations: behavior, behavior-videos, fib
+        modalities should the data modality abbreviations, for example: behavior,
+        behavior-videos, fib, ecephys
     extra_filter (dict), docdb query
 
     Example
@@ -127,6 +129,7 @@ def get_assets(subjects=[], processed=True, task=[], modality=["behavior"], extr
         # Return only essential information for performance
         projection = {
             "name": 1,
+            "_id": 1,
             "session": 1,
             "session_name": 1,
             "external_links": 1,
