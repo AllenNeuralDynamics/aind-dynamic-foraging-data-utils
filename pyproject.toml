@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "aind-dynamic-foraging-data-utils"
 description = "Functions to help with postprocessing dynamic foraging data."
 license = {text = "MIT"}
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 authors = [
     {name = "Allen Institute for Neural Dynamics"}
 ]
@@ -21,7 +21,8 @@ dependencies = [
     'numpy',
     'pynwb',
     'hdmf_zarr',
-    'aind-data-access-api'
+    'aind-data-access-api',
+    'codeocean'
 ]
 
 [project.optional-dependencies]
@@ -43,7 +44,7 @@ version = {attr = "aind_dynamic_foraging_data_utils.__version__"}
 
 [tool.black]
 line-length = 100
-target_version = ['py37']
+target_version = ['py39']
 exclude = '''
 
 (
