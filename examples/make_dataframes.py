@@ -24,10 +24,10 @@ df_trials = nwb_utils.create_df_trials(NWB_FILES[0])
 
 # tidy data frame of all events in the session
 # Accepts NWB filepath or object
-df_events = nwb_utils.create_events_df(nwb)
-df_events = nwb_utils.create_events_df(NWB_FILES[0])
+df_events = nwb_utils.create_df_events(nwb)
+df_events = nwb_utils.create_df_events(NWB_FILES[0])
 
 # Data frame of FIB data
 # Accepts NWB filepath or object
-fib_df = nwb_utils.create_fib_df(nwb)
-fib_df = nwb_utils.create_fib_df(NWB_FILES[0])
+df_fip = nwb_utils.create_df_fip(nwb)
+df_fip = nwb_utils.create_df_fip(NWB_FILES[0])

@@ -5,8 +5,8 @@ Utility functions for processing dynamic foraging data.
     create_df_session
     create_single_df_session
     create_df_trials
-    create_events_df
-    create_fib_df
+    create_df_events
+    create_df_fip
 """
 
 import os
@@ -533,7 +533,7 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     return df
 
 
-def create_events_df(nwb_filename, adjust_time=True, verbose=True):
+def create_df_events(nwb_filename, adjust_time=True, verbose=True):
     """
     returns a tidy dataframe of the events in the nwb file
 
@@ -620,7 +620,7 @@ def create_events_df(nwb_filename, adjust_time=True, verbose=True):
     return df
 
 
-def create_fib_df(nwb_filename, tidy=True, adjust_time=True, verbose=True):
+def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     """
     returns a dataframe of the FIB data in the nwb file
     if tidy, return a tidy dataframe
