@@ -22,56 +22,146 @@ from codeocean.data_asset import DataAssetAttachParams
 from aind_dynamic_foraging_data_utils import nwb_utils
 
 
-def get_subject_assets(subject_id, processed=True):
+def get_subject_assets(subject_id, **kwargs):
     """
     Returns the docDB results for a subject. If duplicate entries exist, take the last
     based on processing time. Skips pavlovian task.
 
+    equivalent to get_assets(subjects=[subject_id])
+
     subject_id (str or int) subject id to get assets for from docDB
     processed (bool) if True, look for processed assets. If False, look for raw assets
+    task (list of strings), if empty, include all task variants: Uncoupled Baiting,
+        Coupled Baiting, Uncoupled Without Baiting, Coupled Without Baiting.
+        If not empty, only include the task variants provided.
+    modality (list of strings), required data modality. If empty list, does not filter
+        modalities should the data modality abbreviations, for example: behavior,
+        behavior-videos, fib, ecephys
+    extra_filter (dict), docdb query
 
     Example
     results = get_subject_assets(my_id)
     co_assets = attach_data(results['code_ocean_asset_id'].values)
-    """
 
+    To filter by stage:
+    stage_filter = {
+        "session.stimulus_epochs.output_parameters.task_parameters.stage_in_use":
+        {"$regex" :"STAGE_FINAL"}
+        }
+    Note, until backfilling is done this information is missing in older data, see
+    this issue for progress and details:
+    https://github.com/AllenNeuralDynamics/aind-data-migration-scripts/issues/374
+
+    """
+    return get_assets(subjects=[subject_id], **kwargs)
+
+
+def get_assets(subjects=[], processed=True, task=[], modality=["behavior"], extra_filter={}):
+    """
+    Returns the docDB results for a subject. If duplicate entries exist, take the last
+    based on processing time. Skips pavlovian task.
+
+    subjects (a list of strs or ints) subject ids to get assets for from docDB
+    processed (bool) if True, look for processed assets. If False, look for raw assets
+    task (list of strings), if empty, include all task variants: Uncoupled Baiting,
+        Coupled Baiting, Uncoupled Without Baiting, Coupled Without Baiting.
+        If not empty, only include the task variants provided.
+    modality (list of strings), required data modality. If empty list, does not filter
+        modalities should the data modality abbreviations, for example: behavior,
+        behavior-videos, fib, ecephys
+    extra_filter (dict), docdb query
+
+    Example
+    results = get_assets(subjects=[my_id])
+    co_assets = attach_data(results['code_ocean_asset_id'].values)
+
+    To filter by stage:
+    stage_filter = {
+        "session.stimulus_epochs.output_parameters.task_parameters.stage_in_use":
+        {"$regex" :"STAGE_FINAL"}
+        }
+    Note, until backfilling is done this information is missing in older data, see
+    this issue for progress and details:
+    https://github.com/AllenNeuralDynamics/aind-data-migration-scripts/issues/374
+
+    """
     # Create metadata client
     client = MetadataDbClient(
         host="api.allenneuraldynamics.org", database="metadata_index", collection="data_assets"
     )
 
-    task_filter = {
-        "$or": [
-            {"session": None},
-            {
-                "session": {"$exists": True, "$ne": None},
-                "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"},
-            },
-        ]
-    }
-    # Query based on subject id
-    if processed:
-        results = pd.DataFrame(
-            client.retrieve_docdb_records(
-                filter_query={
-                    "name": {"$regex": "^behavior_{}_.*processed_[0-9-_]*$".format(subject_id)},
-                    **task_filter,
+    # Filter by task
+    if len(task) > 0:
+        task_filter = {"$or": []}
+        for t in task:
+            task_filter["$or"].append(
+                {
+                    "session.session_type": {"$regex": "^{}".format(t)},
                 }
             )
-        )
     else:
-        results = pd.DataFrame(
-            client.retrieve_docdb_records(
-                filter_query={
-                    "name": {"$regex": "^behavior_{}_[0-9-_]*$".format(subject_id)},
-                    **task_filter,
-                }
+        task_filter = {
+            "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"},
+        }
+
+    # Filter by data modality
+    if len(modality) > 0:
+        modality_filter = {"$and": []}
+        for m in modality:
+            modality_filter["$and"].append(
+                {"data_description.modality.abbreviation": {"$regex": m}}
             )
+    else:
+        modality_filter = {}
+
+    # Do we want processed or raw assets
+    if processed:
+        processed_string = "_.*processed_[0-9-_]*"
+    else:
+        processed_string = "_.*"
+
+    # Query based on subject id
+    if len(subjects) == 0:
+        print("Query will be slow without explicit subject ids")
+        subject_filter = {
+            "name": {"$regex": "^behavior_[0-9]*{}$".format(processed_string)},
+        }
+        # Return only essential information for performance
+        projection = {
+            "name": 1,
+            "_id": 1,
+            "session": 1,
+            "session_name": 1,
+            "external_links": 1,
+            "subject.subject_id": 1,
+        }
+    else:
+        subject_filter = {
+            "name": {
+                "$regex": "^behavior_("
+                + "|".join([str(x) for x in subjects])
+                + "){}$".format(processed_string)
+            },
+        }
+        # Return all information
+        projection = None
+
+    # Query
+    results = pd.DataFrame(
+        client.retrieve_docdb_records(
+            filter_query={
+                **subject_filter,
+                **task_filter,
+                **modality_filter,
+                **extra_filter,
+            },
+            projection=projection,
         )
+    )
 
     # If nothing is found, return
     if len(results) == 0:
-        print("No results found for {}".format(subject_id))
+        print("No results found for {}".format(subjects))
         return
 
     # look for duplicate entries, taking the last by processing time
@@ -92,7 +182,7 @@ def get_subject_assets(subject_id, processed=True):
         for link in results_no_duplicates["external_links"]
     ]
 
-    return results_no_duplicates
+    return results_no_duplicates.reset_index(drop=True)
 
 
 def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
