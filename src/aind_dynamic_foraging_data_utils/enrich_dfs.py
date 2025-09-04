@@ -350,12 +350,14 @@ def enrich_df_trials_fm(df_trials_fm):
                 chosen_stay_probabilities[i_idx] = np.nan
                 # chosen_licks[i_idx] = np.nan
             else:
-                chosen_values[i_idx] = df_ses["Q_" + {"L":"left", "R":"right"}[choice]].values[i_idx]
+                chosen_values[i_idx] = df_ses["Q_" + {"L": "left", "R": "right"}
+                                              [choice]].values[i_idx]
                 if has_kernel:
                     chosen_kernels[i_idx] = df_ses[choice + "_kernel"].values[i_idx]
                 chosen_probabilities[i_idx] = df_ses[choice + "_prob"].values[i_idx]
                 if choice != "I":
-                    unchosen_values[i_idx] = df_ses["Q_" + {"L":"right", "R":"left"}[choice]].values[
+                    unchosen_values[i_idx] = df_ses["Q_" + {"L": "right", "R": "left"}
+                                                    [choice]].values[
                         i_idx
                     ]  # noqa: E501
                     unchosen_probabilities[i_idx] = df_ses[
