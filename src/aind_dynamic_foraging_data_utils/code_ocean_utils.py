@@ -277,7 +277,7 @@ def add_data_asset_path(results):
     results = add_data_asset_path(results)
     """
     results["data_path"] = [
-        os.path.join("data", x["name"], "nwb", x["session_name"] + ".nwb")
+        os.path.abspath(os.path.join(os.sep,"data", x["name"], "nwb", x["session_name"] + ".nwb"))
         for index, x in results.iterrows()
     ]
     return results
