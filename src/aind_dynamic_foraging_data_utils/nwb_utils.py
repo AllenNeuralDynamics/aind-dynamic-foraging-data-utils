@@ -36,7 +36,7 @@ def load_nwb_from_filename(filename):
     """
 
     if type(filename) is str:
-        if os.path.isdir(filename) or (filename.startswith('s3://') and filename.endswith('.nwb')):
+        if os.path.isdir(filename) or (filename.startswith("s3://") and filename.endswith(".nwb")):
             io = NWBZarrIO(filename, mode="r")
             nwb = io.read()
             return nwb
@@ -491,8 +491,10 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     rewarded_df = df.query("earned_reward")
     if not np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0:
         if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
-            warnings.warn("Rewarded trials without reward time. \
-                This is likely due to manual rewards not being recorded in sessions from 2024")
+            warnings.warn(
+                "Rewarded trials without reward time. \
+                This is likely due to manual rewards not being recorded in sessions from 2024"
+            )
         else:
             raise AssertionError("Rewarded trials without reward time")
 
@@ -503,8 +505,10 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     earned_df = rewarded_df.query("not extra_reward")
     if not np.all(earned_df["choice_time_in_session"] <= earned_df["reward_time_in_session"]):
         if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
-            warnings.warn("Reward before choice time. \
-                This is likely due to manual rewards not being recorded in sessions from 2024")
+            warnings.warn(
+                "Reward before choice time. \
+                This is likely due to manual rewards not being recorded in sessions from 2024"
+            )
         else:
             raise AssertionError("Reward before choice time")
 
@@ -517,8 +521,11 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     )
     if not np.all(check_rew_time):
         if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
-            warnings.warn("Unrewarded trials with reward time. If this was data from 2024, \
-                        this is likely because extra_rewards are not recorded", UserWarning)
+            warnings.warn(
+                "Unrewarded trials with reward time. If this was data from 2024, \
+                        this is likely because extra_rewards are not recorded",
+                UserWarning,
+            )
         else:
             raise AssertionError("Unrewarded trials with reward time")
 
@@ -530,6 +537,21 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
         print(
             "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
         )
+
+    # Previously lickspout y coordinates were tied, so older data only reported one coordinate
+    # with the adoption of the AIND lickspout stage, we migrated to y1 and y2 coordinates.
+    # older NWB files should be reprocessed to ensure both coordinates are present
+    if ("lickspout_position_y" in df) and ("lickspout_position_y1" not in df):
+        text = (
+            "Independent lickspout y coordinates are not provided. "
+            "This DOES NOT indicate a data error, since older data "
+            "did not allow independent y coordinate movement. It DOES "
+            "indicate this NWB file needs to be reprocessed. Please report to "
+            "https://github.com/AllenNeuralDynamics/aind-dynamic-foraging-data-utils/issues/67"
+        )
+
+        warnings.warn(text, UserWarning)
+
     return df
 
 
