@@ -350,12 +350,12 @@ def enrich_df_trials_fm(df_trials_fm):
                 chosen_stay_probabilities[i_idx] = np.nan
                 # chosen_licks[i_idx] = np.nan
             else:
-                chosen_values[i_idx] = df_ses[choice + "_value"].values[i_idx]
+                chosen_values[i_idx] = df_ses["Q_" + {"L":"left", "R":"right"}[choice]].values[i_idx]
                 if has_kernel:
                     chosen_kernels[i_idx] = df_ses[choice + "_kernel"].values[i_idx]
                 chosen_probabilities[i_idx] = df_ses[choice + "_prob"].values[i_idx]
                 if choice != "I":
-                    unchosen_values[i_idx] = df_ses[{"L": "R", "R": "L"}[choice] + "_value"].values[
+                    unchosen_values[i_idx] = df_ses["Q_" + {"L":"right", "R":"left"}[choice]].values[
                         i_idx
                     ]  # noqa: E501
                     unchosen_probabilities[i_idx] = df_ses[
@@ -375,7 +375,7 @@ def enrich_df_trials_fm(df_trials_fm):
         for i_mod, mod in enumerate(models):
             df_ses.loc[:, "Q_chosen"] = chosen_values
             df_ses.loc[:, "Q_unchosen"] = unchosen_values
-            df_ses.loc[:, "Q_sum"] = df_ses["L_value"].values + df_ses["R_value"].values
+            df_ses.loc[:, "Q_sum"] = df_ses["Q_left"].values + df_ses["Q_right"].values
             df_ses.loc[:, "Q_Delta"] = df_ses["Q_chosen"].values - df_ses["Q_unchosen"].values
             df_ses.loc[:, "Q_change"] = np.concatenate([[0], np.diff(chosen_values)])
 
