@@ -45,12 +45,12 @@ df_trials = nwb_utils.create_df_trials(nwb)
 
 To extract a pandas dataframe of events
 ```
-df_events = nwb_utils.create_events_df(nwb)
+df_events = nwb_utils.create_df_events(nwb)
 ```
 
 To extract a pandas dataframe of photometry data
 ```
-fip_df = nwb_utils.create_fib_df(nwb)
+df_fip = nwb_utils.create_df_fip(nwb)
 ```
 
 By default, all of these functions adjust timestamps such that t(0) is the time of the first go cue. If you wish to disable this feature, use `adjust_time=False`
@@ -62,7 +62,7 @@ To align a data variable to a set of timepoints and create an event triggered re
 import aind_dynamic_foraging_data_utils.alignment as alignment
 
 etr = alignment.event_triggered_response(
-    fip_df.query('event == "<FIP channel>"'),
+    df_fip.query('event == "<FIP channel>"'),
     "timestamps",
     "data",
     df_trials['goCue_start_time_in_session'].values,
