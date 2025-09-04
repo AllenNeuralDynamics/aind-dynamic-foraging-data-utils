@@ -277,7 +277,7 @@ def add_data_asset_path(results):
     results = add_data_asset_path(results)
     """
     results["data_path"] = [
-        os.path.join("data", x["name"], "nwb", x["session_name"] + ".nwb")
+        os.path.abspath(os.path.join(os.sep, "data", x["name"], "nwb", x["session_name"] + ".nwb"))
         for index, x in results.iterrows()
     ]
     return results
@@ -318,7 +318,7 @@ def get_all_df_for_nwb(filename_sessions, interested_channels=None):
 
         # FIP
         try:
-            df_ses_fip = nwb_utils.create_fib_df(nwb, tidy=True)
+            df_ses_fip = nwb_utils.create_df_fip(nwb, tidy=True)
             if interested_channels:
                 df_ses_fip = df_ses_fip[df_ses_fip["event"].isin(interested_channels)]
             list_df_fip.append(df_ses_fip)
@@ -328,7 +328,7 @@ def get_all_df_for_nwb(filename_sessions, interested_channels=None):
 
         # Events
         try:
-            df_ses_events = nwb_utils.create_events_df(nwb)
+            df_ses_events = nwb_utils.create_df_events(nwb)
             df_ses_events["ses_idx"] = ses_idx  # Add session identifier
             list_df_events.append(df_ses_events)
         except AssertionError as e:
@@ -350,6 +350,7 @@ def get_foraging_model_info(
     get_foraging_model_info: retrieves fitted foraging_model information
     df_trials: dataframe for trials (1 row per trials) from nwb_utils.create df_trials.
                saved df_trials_fm will have L_prob, R_prob, Q_left, Q_right
+
                (if choice kernel in model), L_kernel, R_kernel
     df_sess: dataframe for sessions (1 row per session) from nwb_utils.create_df_sessions
                saved df_sess_fm will have parameters fitted for each mouse.
