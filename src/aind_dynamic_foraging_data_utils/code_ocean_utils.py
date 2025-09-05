@@ -348,8 +348,9 @@ def get_foraging_model_info(
 ):
     """
     get_foraging_model_info: retrieves fitted foraging_model information
-    df_trials: dataframe for trials (1 row per trials) from nwb_utils.create_df_trials.
-               saved df_trials_fm will have L_prob, R_prob, L_value, R_value,
+    df_trials: dataframe for trials (1 row per trials) from nwb_utils.create df_trials.
+               saved df_trials_fm will have L_prob, R_prob, Q_left, Q_right
+
                (if choice kernel in model), L_kernel, R_kernel
     df_sess: dataframe for sessions (1 row per session) from nwb_utils.create_df_sessions
                saved df_sess_fm will have parameters fitted for each mouse.
@@ -366,8 +367,8 @@ def get_foraging_model_info(
     df_trials_fm["model_name"] = model_name
     df_trials_fm["L_prob"] = np.nan
     df_trials_fm["R_prob"] = np.nan
-    df_trials_fm["L_value"] = np.nan
-    df_trials_fm["R_value"] = np.nan
+    df_trials_fm["Q_left"] = np.nan
+    df_trials_fm["Q_right"] = np.nan
 
     # check if CK is in model_name, if so, add df_trials_fm['L_kernel]
     if "CK" in model_name:
@@ -402,8 +403,8 @@ def get_foraging_model_info(
 
         df_trials_fm.loc[mouse_choice_idx, "L_prob"] = choice_prob[0, :]
         df_trials_fm.loc[mouse_choice_idx, "R_prob"] = choice_prob[1, :]
-        df_trials_fm.loc[mouse_choice_idx, "L_value"] = qvals[0, :-1]
-        df_trials_fm.loc[mouse_choice_idx, "R_value"] = qvals[1, :-1]
+        df_trials_fm.loc[mouse_choice_idx, "Q_left"] = qvals[0, :-1]
+        df_trials_fm.loc[mouse_choice_idx, "Q_right"] = qvals[1, :-1]
 
         if "CK" in model_name:
             df_trials_fm.loc[mouse_choice_idx, "L_kernel"] = choice_kernel[0, :-1]
