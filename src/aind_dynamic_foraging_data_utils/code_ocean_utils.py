@@ -383,7 +383,7 @@ def get_foraging_model_info(
             agent_alias=model_name,
         )
 
-        if df is None:
+        if df is None or df.get("params") is None or df.get("latent_variables") is None:
             continue  # skip if no model fits is found for this session
 
         # Fitted parameters
