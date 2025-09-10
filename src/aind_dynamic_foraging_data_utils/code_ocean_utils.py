@@ -404,9 +404,10 @@ def get_foraging_model_info(
         choice_prob = np.array(fitted_latent["choice_prob"]).astype(float)
 
         if len(mouse_choice_idx) != np.shape(choice_prob)[1]:
-            print(f"Skipping {sess_i}. Fitted model {model_name} does not have matching number of trials" )
+            print(f"Skipping {sess_i}. Fitted model {model_name} \
+                  does not have matching number of trials")
+            continue  # skip if the fitted choices do not match number of trials
 
-            continue # skip if the fitted choices do not match number of trials
         df_trials_fm.loc[mouse_choice_idx, "L_prob"] = choice_prob[0, :]
         df_trials_fm.loc[mouse_choice_idx, "R_prob"] = choice_prob[1, :]
         df_trials_fm.loc[mouse_choice_idx, "Q_left"] = qvals[0, :-1]
