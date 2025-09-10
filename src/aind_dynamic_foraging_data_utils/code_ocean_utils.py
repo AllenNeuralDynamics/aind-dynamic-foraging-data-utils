@@ -312,8 +312,8 @@ def get_all_df_for_nwb(filename_sessions, interested_channels=None):
         try:
             df_ses_trials = nwb_utils.create_df_trials(nwb)
             list_df_trials.append(df_ses_trials)
-        except AssertionError as e:
-            print(f"Skipping {ses_idx} due to assertion error in df_trials: {e}")
+        except Exception as e:
+            print(f"Skipping {ses_idx} due to error in df_trials: {e}")
             continue
 
         # FIP
@@ -322,8 +322,8 @@ def get_all_df_for_nwb(filename_sessions, interested_channels=None):
             if interested_channels:
                 df_ses_fip = df_ses_fip[df_ses_fip["event"].isin(interested_channels)]
             list_df_fip.append(df_ses_fip)
-        except AssertionError as e:
-            print(f"Skipping {ses_idx} due to assertion error in df_fip: {e}")
+        except Exception as e:
+            print(f"Skipping {ses_idx} due to error in df_fip: {e}")
             continue
 
         # Events
@@ -331,8 +331,8 @@ def get_all_df_for_nwb(filename_sessions, interested_channels=None):
             df_ses_events = nwb_utils.create_df_events(nwb)
             df_ses_events["ses_idx"] = ses_idx  # Add session identifier
             list_df_events.append(df_ses_events)
-        except AssertionError as e:
-            print(f"Skipping {ses_idx} due to assertion error in df_events: {e}")
+        except Exception as e:
+            print(f"Skipping {ses_idx} due to error in df_events: {e}")
             continue
 
     # Concatenate all collected DataFrames
@@ -397,10 +397,16 @@ def get_foraging_model_info(
             (df_trials_fm["ses_idx"] == str(sess_i["ses_idx"])) & (df_trials_fm["choice"] < 2)
         ]
 
+        # Add check on mouse_choice_idx and length of choice_prob
+
         qvals = np.array(fitted_latent["q_value"]).astype(float)
         choice_kernel = np.array(fitted_latent["choice_kernel"]).astype(float)
         choice_prob = np.array(fitted_latent["choice_prob"]).astype(float)
 
+        if len(mouse_choice_idx) != np.shape(choice_prob)[1]:
+            print(f"Skipping {sess_i}. Fitted model {model_name} does not have matching number of trials" )
+
+            continue # skip if the fitted choices do not match number of trials
         df_trials_fm.loc[mouse_choice_idx, "L_prob"] = choice_prob[0, :]
         df_trials_fm.loc[mouse_choice_idx, "R_prob"] = choice_prob[1, :]
         df_trials_fm.loc[mouse_choice_idx, "Q_left"] = qvals[0, :-1]
