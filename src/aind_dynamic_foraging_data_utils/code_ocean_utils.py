@@ -382,19 +382,23 @@ def get_foraging_model_info(
             session_date=str(sess_i["session_date"]),
             agent_alias=model_name,
         )
-
+        sess_idx = str(sess_i["ses_idx"])
         if df is None or df.get("params") is None or df.get("latent_variables") is None:
+            print(f"Skipping {sess_idx}. Fitted model {model_name}, \
+                 params, or latent variables not found for this session")
             continue  # skip if no model fits is found for this session
 
         # Fitted parameters
         params = df["params"][0]
+        params["ses_idx"] = str(sess_i["ses_idx"])
+        df_sess_params.append(params)
 
         # Fitted latent variables
         fitted_latent = df["latent_variables"][0]
 
         # pull the information
         mouse_choice_idx = df_trials_fm.index[
-            (df_trials_fm["ses_idx"] == str(sess_i["ses_idx"])) & (df_trials_fm["choice"] < 2)
+            (df_trials_fm["ses_idx"] == sess_idx) & (df_trials_fm["choice"] < 2)
         ]
 
         # Add check on mouse_choice_idx and length of choice_prob
@@ -404,7 +408,7 @@ def get_foraging_model_info(
         choice_prob = np.array(fitted_latent["choice_prob"]).astype(float)
 
         if len(mouse_choice_idx) != np.shape(choice_prob)[1]:
-            print(f"Skipping {sess_i}. Fitted model {model_name} \
+            print(f"Skipping {sess_idx}. Fitted model {model_name} \
                   does not have matching number of trials")
             continue  # skip if the fitted choices do not match number of trials
 
@@ -416,9 +420,6 @@ def get_foraging_model_info(
         if "CK" in model_name:
             df_trials_fm.loc[mouse_choice_idx, "L_kernel"] = choice_kernel[0, :-1]
             df_trials_fm.loc[mouse_choice_idx, "R_kernel"] = choice_kernel[1, :-1]
-
-        params["ses_idx"] = str(sess_i["ses_idx"])
-        df_sess_params.append(params)
 
     df_sess_params = pd.DataFrame(df_sess_params)
     df_sess_fm = df_sess.merge(df_sess_params, how="left", on=["ses_idx"])
