@@ -49,7 +49,7 @@ def get_subject_assets(subject_id, **kwargs):
     return get_assets(subjects=[subject_id], **kwargs)
 
 
-def get_assets(
+def get_assets(  # NOQA: C901
     subjects=[], processed=True, task=[], modality=["behavior"], stage=[], extra_filter={}
 ):
     """
