@@ -37,26 +37,21 @@ def get_subject_assets(subject_id, **kwargs):
     modality (list of strings), required data modality. If empty list, does not filter
         modalities should the data modality abbreviations, for example: behavior,
         behavior-videos, fib, ecephys
+    stage (list of strings), if empty, include all training stages. Otherwise, only
+        return stages included in this list
     extra_filter (dict), docdb query
 
     Example
     results = get_subject_assets(my_id)
     co_assets = attach_data(results['code_ocean_asset_id'].values)
 
-    To filter by stage:
-    stage_filter = {
-        "session.stimulus_epochs.output_parameters.task_parameters.stage_in_use":
-        {"$regex" :"STAGE_FINAL"}
-        }
-    Note, until backfilling is done this information is missing in older data, see
-    this issue for progress and details:
-    https://github.com/AllenNeuralDynamics/aind-data-migration-scripts/issues/374
-
     """
     return get_assets(subjects=[subject_id], **kwargs)
 
 
-def get_assets(subjects=[], processed=True, task=[], modality=["behavior"], extra_filter={}):
+def get_assets(
+    subjects=[], processed=True, task=[], modality=["behavior"], stage=[], extra_filter={}
+):
     """
     Returns the docDB results for a subject. If duplicate entries exist, take the last
     based on processing time. Skips pavlovian task.
@@ -69,21 +64,13 @@ def get_assets(subjects=[], processed=True, task=[], modality=["behavior"], extr
     modality (list of strings), required data modality. If empty list, does not filter
         modalities should the data modality abbreviations, for example: behavior,
         behavior-videos, fib, ecephys
+    stage (list of strings), if empty, include all training stages. Otherwise, only
+        return stages included in this list
     extra_filter (dict), docdb query
 
     Example
     results = get_assets(subjects=[my_id])
     co_assets = attach_data(results['code_ocean_asset_id'].values)
-
-    To filter by stage:
-    stage_filter = {
-        "session.stimulus_epochs.output_parameters.task_parameters.stage_in_use":
-        {"$regex" :"STAGE_FINAL"}
-        }
-    Note, until backfilling is done this information is missing in older data, see
-    this issue for progress and details:
-    https://github.com/AllenNeuralDynamics/aind-data-migration-scripts/issues/374
-
     """
     # Create metadata client
     client = MetadataDbClient(
@@ -113,6 +100,14 @@ def get_assets(subjects=[], processed=True, task=[], modality=["behavior"], extr
             )
     else:
         modality_filter = {}
+
+    # Filter by stage:
+    if len(stage) > 0:
+        stage_filter = {
+            "session.stimulus_epochs.output_parameters.task_parameters.stage_in_use": {"$in": stage}
+        }
+    else:
+        stage_filter = {}
 
     # Do we want processed or raw assets
     if processed:
@@ -153,6 +148,7 @@ def get_assets(subjects=[], processed=True, task=[], modality=["behavior"], extr
                 **subject_filter,
                 **task_filter,
                 **modality_filter,
+                **stage_filter,
                 **extra_filter,
             },
             projection=projection,
@@ -404,8 +400,10 @@ def get_foraging_model_info(
         choice_prob = np.array(fitted_latent["choice_prob"]).astype(float)
 
         if len(mouse_choice_idx) != np.shape(choice_prob)[1]:
-            print(f"Skipping {sess_i}. Fitted model {model_name} \
-                  does not have matching number of trials")
+            print(
+                f"Skipping {sess_i}. Fitted model {model_name} \
+                  does not have matching number of trials"
+            )
             continue  # skip if the fitted choices do not match number of trials
 
         df_trials_fm.loc[mouse_choice_idx, "L_prob"] = choice_prob[0, :]
