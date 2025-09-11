@@ -421,7 +421,6 @@ def get_foraging_model_info(
             df_trials_fm.loc[mouse_choice_idx, "L_kernel"] = choice_kernel[0, :-1]
             df_trials_fm.loc[mouse_choice_idx, "R_kernel"] = choice_kernel[1, :-1]
 
-
     df_sess_params = pd.DataFrame(df_sess_params)
     df_sess_fm = df_sess.merge(df_sess_params, how="left", on=["ses_idx"])
 
