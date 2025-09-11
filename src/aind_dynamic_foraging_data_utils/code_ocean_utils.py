@@ -38,7 +38,8 @@ def get_subject_assets(subject_id, **kwargs):
         modalities should the data modality abbreviations, for example: behavior,
         behavior-videos, fib, ecephys
     stage (list of strings), if empty, include all training stages. Otherwise, only
-        return stages included in this list
+        return stages included in this list. Possible stage names include STAGE_1,
+        STAGE_1_WARMUP, STAGE_2, STAGE_3, STAGE_4, STAGE_FINAL, GRADUATED, None
     extra_filter (dict), docdb query
 
     Example
@@ -65,7 +66,8 @@ def get_assets(  # NOQA: C901
         modalities should the data modality abbreviations, for example: behavior,
         behavior-videos, fib, ecephys
     stage (list of strings), if empty, include all training stages. Otherwise, only
-        return stages included in this list
+        return stages included in this list. Possible stage names include STAGE_1,
+        STAGE_1_WARMUP, STAGE_2, STAGE_3, STAGE_4, STAGE_FINAL, GRADUATED, None
     extra_filter (dict), docdb query
 
     Example
@@ -380,8 +382,10 @@ def get_foraging_model_info(
         )
         sess_idx = str(sess_i["ses_idx"])
         if df is None or df.get("params") is None or df.get("latent_variables") is None:
-            print(f"Skipping {sess_idx}. Fitted model {model_name}, \
-                 params, or latent variables not found for this session")
+            print(
+                f"Skipping {sess_idx}. Fitted model {model_name}, \
+                 params, or latent variables not found for this session"
+            )
             continue  # skip if no model fits is found for this session
 
         # Fitted parameters
@@ -404,8 +408,10 @@ def get_foraging_model_info(
         choice_prob = np.array(fitted_latent["choice_prob"]).astype(float)
 
         if len(mouse_choice_idx) != np.shape(choice_prob)[1]:
-            print(f"Skipping {sess_idx}. Fitted model {model_name} \
-                  does not have matching number of trials")
+            print(
+                f"Skipping {sess_idx}. Fitted model {model_name} \
+                  does not have matching number of trials"
+            )
             continue  # skip if the fitted choices do not match number of trials
 
         df_trials_fm.loc[mouse_choice_idx, "L_prob"] = choice_prob[0, :]
