@@ -381,11 +381,10 @@ def get_foraging_model_info(
             agent_alias=model_name,
         )
         sess_idx = str(sess_i["ses_idx"])
-        if df is None or df.get("params") is None or df.get("latent_variables") is None:
-            print(
-                f"Skipping {sess_idx}. Fitted model {model_name}, \
-                 params, or latent variables not found for this session"
-            )
+        if df is None or df.get("params") is None or \
+           df.get("latent_variables") is None or df["latent_variables"][0] is None:
+            print(f"Skipping {sess_idx}. Fitted model {model_name}, \
+                 params, or latent variables not found for this session")
             continue  # skip if no model fits is found for this session
 
         # Fitted parameters
