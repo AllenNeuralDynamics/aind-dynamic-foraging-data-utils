@@ -371,8 +371,7 @@ def event_triggered_response(  # noqa C901
         output_sampling_rate = 1 / np.diff(data[t]).mean()
 
     # sort data by time column to prevent errors in interpolate
-
-    data = data.sort_values(by=t, inplace=False)
+    data = data.sort_values(by=t)
 
     # if interpolate is set to True,
     # we will calculate a common timebase and
