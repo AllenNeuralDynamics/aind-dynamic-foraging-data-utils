@@ -11,6 +11,7 @@ Important utility functions for enriching the dataframes
 """
 
 import itertools
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -162,9 +163,12 @@ def zscore_fip(df_fip, data_col="data"):
     nwb.df_fip = zscore_fip(nwb.df_fip)
     """
     df_fip_z = df_fip.copy()
-    df_fip_z.loc[:, "{}_z".format(data_col)] = df_fip_z.groupby(["ses_idx", "event"])[
-        data_col
-    ].transform(lambda x: zscore(x, ddof=1, nan_policy="omit"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        # Ignore run-time warnings because FIP_falling_time and FIP_rising_time are all ones.
+        df_fip_z.loc[:, "{}_z".format(data_col)] = df_fip_z.groupby(["ses_idx", "event"])[
+            data_col
+        ].transform(lambda x: zscore(x, ddof=1, nan_policy="omit"))
     return df_fip_z
 
 
@@ -350,14 +354,16 @@ def enrich_df_trials_fm(df_trials_fm):
                 chosen_stay_probabilities[i_idx] = np.nan
                 # chosen_licks[i_idx] = np.nan
             else:
-                chosen_values[i_idx] = df_ses["Q_" + {"L": "left", "R": "right"}
-                                              [choice]].values[i_idx]
+                chosen_values[i_idx] = df_ses["Q_" + {"L": "left", "R": "right"}[choice]].values[
+                    i_idx
+                ]
                 if has_kernel:
                     chosen_kernels[i_idx] = df_ses[choice + "_kernel"].values[i_idx]
                 chosen_probabilities[i_idx] = df_ses[choice + "_prob"].values[i_idx]
                 if choice != "I":
-                    unchosen_values[i_idx] = df_ses["Q_" + {"L": "right", "R": "left"}
-                                                    [choice]].values[
+                    unchosen_values[i_idx] = df_ses[
+                        "Q_" + {"L": "right", "R": "left"}[choice]
+                    ].values[
                         i_idx
                     ]  # noqa: E501
                     unchosen_probabilities[i_idx] = df_ses[
