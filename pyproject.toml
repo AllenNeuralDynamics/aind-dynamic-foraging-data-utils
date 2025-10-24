@@ -3,8 +3,8 @@ requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aind-dynamic-foraging-data-utils"
-description = "Functions to help with postprocessing dynamic foraging data."
+name = "aind-pavlovian-data-utils"
+description = "Functions to help with postprocessing pavlovian data."
 license = {text = "MIT"}
 requires-python = ">=3.9"
 authors = [
@@ -40,7 +40,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.dynamic]
-version = {attr = "aind_dynamic_foraging_data_utils.__version__"}
+version = {attr = "aind_pavlovian_data_utils.__version__"}
 
 [tool.black]
 line-length = 100
@@ -65,7 +65,7 @@ exclude = '''
 
 [tool.coverage.run]
 omit = ["*__init__*"]
-source = ["aind_dynamic_foraging_data_utils", "tests"]
+source = ["aind_pavlovian_data_utils", "tests"]
 
 [tool.coverage.report]
 exclude_lines = [
