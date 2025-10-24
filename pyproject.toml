@@ -23,6 +23,7 @@ dependencies = [
     'hdmf_zarr',
     'aind-data-access-api',
     'codeocean'
+    'aind-dynamic-foraging-data-utils'
 ]
 
 [project.optional-dependencies]
