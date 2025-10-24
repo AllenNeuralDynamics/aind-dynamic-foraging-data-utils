@@ -22,7 +22,7 @@ dependencies = [
     'pynwb',
     'hdmf_zarr',
     'aind-data-access-api',
-    'codeocean'
+    'codeocean',
     'aind-dynamic-foraging-data-utils'
 ]
 
