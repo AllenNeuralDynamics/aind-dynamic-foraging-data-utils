@@ -1,4 +1,4 @@
-# aind-dynamic-foraging-data-utils
+# aind-pavlovian-data-utils
 
 
 [![License](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
