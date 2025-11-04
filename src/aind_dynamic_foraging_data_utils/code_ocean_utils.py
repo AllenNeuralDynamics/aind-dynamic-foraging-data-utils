@@ -51,7 +51,7 @@ def get_subject_assets(subject_id, **kwargs):
 
 
 def get_assets(  # NOQA: C901
-    subjects=[], processed=True, task=[], modality=["behavior"], stage=[], extra_filter={}
+    subjects=[], processed=True, task=[], modality=["behavior"], stage=[], extra_filter={}, input_projection = {}
 ):
     """
     Returns the docDB results for a subject. If duplicate entries exist, take the last
@@ -133,6 +133,7 @@ def get_assets(  # NOQA: C901
             "session_name": 1,
             "external_links": 1,
             "subject.subject_id": 1,
+            **input_projection
         }
     else:
         subject_filter = {
