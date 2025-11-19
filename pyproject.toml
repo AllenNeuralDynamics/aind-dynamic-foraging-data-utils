@@ -22,7 +22,8 @@ dependencies = [
     'pynwb',
     'hdmf_zarr',
     'aind-data-access-api',
-    'codeocean'
+    'codeocean',
+    's3fs >= 2025.10.0'
 ]
 
 [project.optional-dependencies]

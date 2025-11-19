@@ -14,6 +14,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+import s3fs
 from aind_analysis_arch_result_access.han_pipeline import get_mle_model_fitting
 from aind_data_access_api.document_db import MetadataDbClient
 from codeocean import CodeOcean
@@ -278,7 +279,7 @@ def check_data_assets(co_assets, data_asset_IDs):
 
 def add_data_asset_path(results):
     """
-    Adds the filepath to the dataframe
+    Adds the dataasset filepath to the dataframe
     Example
     results = get_subject_assets(my_id)
     results = add_data_asset_path(results)
@@ -287,6 +288,26 @@ def add_data_asset_path(results):
         os.path.abspath(os.path.join(os.sep, "data", x["name"], "nwb", x["session_name"] + ".nwb"))
         for index, x in results.iterrows()
     ]
+    return results
+
+
+def add_s3_location(results):
+    """
+    Adds the s3 location of the NWB file to the datafraome
+    example:
+    results = add_s3_location(results)
+    """
+    s3_locations = []
+    s3_file_system = s3fs.S3FileSystem()
+    file_extension = ".nwb"
+    for index, row in results.iterrows():
+        location = s3_file_system.glob(f"{row['location']}/**/*{file_extension}")
+        if len(location) > 0:
+            s3_locations.append(f"s3://{location[0]}")
+        else:
+            print("Warning, could not find s3 NWB location")
+            s3_locations.append("")
+    results["s3_nwb_location"] = s3_locations
     return results
 
 
