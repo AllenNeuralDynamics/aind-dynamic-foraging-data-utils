@@ -9,6 +9,8 @@ Utility functions for processing dynamic foraging data.
     create_df_fip
 """
 
+from __future__ import annotations
+
 import os
 import re
 import warnings
@@ -27,6 +29,29 @@ RESPONSE_TIMING_TOLERANCE = 0.005
 
 # Tolerance for responses before the go cue
 CHOICE_TIMING_TOLERANCE = 0.005
+
+
+def _parse_session_id(session_id: str) -> None | tuple[str, str, str | None]:
+    session_re = re.compile(
+        r"(?P<subject_id>\d{6,})_(?P<session_date>\d{4}-\d{2}-\d{2})(?:_(?P<session_time>\d{2}-\d{2}-\d{2}))?"
+    )
+    match = session_re.search(session_id)
+    if match is None:
+        return None
+    return (
+        match.group("subject_id"),
+        match.group("session_date"),
+        match.group("session_time"),
+    )
+
+
+def _parse_session_id_or_raise(session_id: str) -> tuple[str, str, str | None]:
+    result = _parse_session_id(session_id)
+    if result is None:
+        raise ValueError(
+            f"Could not parse subject_id and session_date from {session_id}"
+        )
+    return result
 
 
 def load_nwb_from_filename(filename):
@@ -327,14 +352,7 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     nwb = load_nwb_from_filename(nwb_filename)
 
     # Parse subject and session_date
-    if nwb.session_id.startswith("behavior") or nwb.session_id.startswith("FIP"):
-        splits = nwb.session_id.split("_")
-        subject_id = splits[1]
-        session_date = splits[2]
-    else:
-        splits = nwb.session_id.split("_")
-        subject_id = splits[0]
-        session_date = splits[1]
+    subject_id, session_date, _ = _parse_session_id_or_raise(nwb.session_id)
     ses_idx = subject_id + "_" + session_date
 
     # Build dataframe
@@ -699,14 +717,7 @@ def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
     # Add session_idx with subject ID and session date info - JL
-    if nwb.session_id.startswith("behavior") or nwb.session_id.startswith("FIP"):
-        splits = nwb.session_id.split("_")
-        subject_id = splits[1]
-        session_date = splits[2]
-    else:
-        splits = nwb.session_id.split("_")
-        subject_id = splits[0]
-        session_date = splits[1]
+    subject_id, session_date, _ = _parse_session_id_or_raise(nwb.session_id)
     ses_idx = subject_id + "_" + session_date
     df["ses_idx"] = ses_idx
 
