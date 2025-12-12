@@ -642,11 +642,16 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True):
     return df
 
 
-def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True):
+def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True, subset = None, processing = None):
     """
     returns a dataframe of the FIB data in the nwb file
     if tidy, return a tidy dataframe
     if not tidy, return pivoted by timestamp
+
+    subset (list of string): if not None, pull the subset of fip channels from the full list
+    processing (str or list of strings): if not None, only pull the channels with 
+                                         particular processing method. Includes 
+                                         'raw', '
 
     adjust_time (bool), set time of first goCue to t=0
     """
