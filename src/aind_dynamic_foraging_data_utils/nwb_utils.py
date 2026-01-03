@@ -306,7 +306,9 @@ def create_single_df_session(nwb_filename):
     return df_session
 
 
-def create_df_trials(nwb_filename, adjust_time=True, verbose=True, forced_sanity_check=True):  # NOQA C901
+def create_df_trials(
+    nwb_filename, adjust_time=True, verbose=True, forced_sanity_check=True
+):  # NOQA C901
     """
     Process nwb and create df_trials for every single session
 
@@ -505,7 +507,7 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True, forced_sanity
                 raise AssertionError("Rewarded trials without reward time")
             else:
                 warnings.warn("Rewarded trials without reward time")
-    
+
     if not np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0:
         if forced_sanity_check:
             raise AssertionError("Rewarded trials without choice time")
@@ -525,9 +527,7 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True, forced_sanity
             else:
                 warnings.warn("Reward before choice time")
 
-    if not np.all(
-        rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE
-    ):
+    if not np.all(rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE):
         if forced_sanity_check:
             raise AssertionError("Rewarded trial with negative choice_time_in_trial")
         else:
