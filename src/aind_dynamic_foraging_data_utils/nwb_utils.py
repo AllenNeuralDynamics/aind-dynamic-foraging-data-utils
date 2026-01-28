@@ -12,12 +12,12 @@ Utility functions for processing dynamic foraging data.
 import os
 import re
 import warnings
+from datetime import date
 
 import numpy as np
 import pandas as pd
 from hdmf_zarr import NWBZarrIO
 from pynwb import NWBHDF5IO
-from datetime import date
 
 # If we adjust time_in_session, adjust it to this
 SESSION_ALIGNMENT = "goCue_start_time"
@@ -491,10 +491,8 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     rewarded_df = df.query("earned_reward")
     if not np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0:
         if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
-            warnings.warn(
-                "Rewarded trials without reward time. \
-                This is likely due to manual rewards not being recorded in sessions from 2024"
-            )
+            warnings.warn("Rewarded trials without reward time. \
+                This is likely due to manual rewards not being recorded in sessions from 2024")
         else:
             raise AssertionError("Rewarded trials without reward time")
 
@@ -505,10 +503,8 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     earned_df = rewarded_df.query("not extra_reward")
     if not np.all(earned_df["choice_time_in_session"] <= earned_df["reward_time_in_session"]):
         if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
-            warnings.warn(
-                "Reward before choice time. \
-                This is likely due to manual rewards not being recorded in sessions from 2024"
-            )
+            warnings.warn("Reward before choice time. \
+                This is likely due to manual rewards not being recorded in sessions from 2024")
         else:
             raise AssertionError("Reward before choice time")
 
@@ -555,10 +551,7 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     return df
 
 
-def create_df_events(nwb_filename, 
-                     adjust_time=True, 
-                     verbose=True,
-                     ignore=['sniff_detector']):
+def create_df_events(nwb_filename, adjust_time=True, verbose=True, ignore=["sniff_detector"]):
     """
     returns a tidy dataframe of the events in the nwb file
 
@@ -584,11 +577,11 @@ def create_df_events(nwb_filename,
     }
 
     event_types -= {"FIP_falling_time", "FIP_rising_time"}
-                         
+
     # Filter out other streams
     for event_field in ignore:
         event_types -= {event_field}
-        
+
     # Determine time 0 as first go Cue
     if adjust_time:
         t0 = nwb.trials[SESSION_ALIGNMENT][0]

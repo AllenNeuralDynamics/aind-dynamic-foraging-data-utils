@@ -1,6 +1,6 @@
 """
-    This is an example script to extract dataframes
-    from an NWB file
+This is an example script to extract dataframes
+from an NWB file
 """
 
 import glob

@@ -1,10 +1,10 @@
 """
-    Tools for aligning continuous and discrete events
-    functions:
-    get_time_array
-    slice_inds_and_offsets
-    index_of_nearest_value
-    event_triggered_response
+Tools for aligning continuous and discrete events
+functions:
+get_time_array
+slice_inds_and_offsets
+index_of_nearest_value
+event_triggered_response
 """
 
 import numpy as np
