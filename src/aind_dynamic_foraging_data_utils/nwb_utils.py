@@ -586,8 +586,8 @@ def create_df_events(nwb_filename,
     event_types -= {"FIP_falling_time", "FIP_rising_time"}
                          
     # Filter out other streams
-    for ii in ignore:
-        event_types-={ii}
+    for event_field in ignore:
+        event_types -= {event_field}
         
     # Determine time 0 as first go Cue
     if adjust_time:
