@@ -555,12 +555,18 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     return df
 
 
-def create_df_events(nwb_filename, adjust_time=True, verbose=True):
+def create_df_events(nwb_filename, 
+                     adjust_time=True, 
+                     verbose=True,
+                     ignore = ['sniff_detector']):
     """
     returns a tidy dataframe of the events in the nwb file
 
     adjust_time (bool), set time of first goCue to t=0
     verbose (bool), give warnings for adjustments
+    ignore (List), event fields to ignore in dataframe creation
+        Useful if e.g. continuous data in events.
+        FIP data will always be ignored.
     """
 
     nwb = load_nwb_from_filename(nwb_filename)
@@ -578,7 +584,11 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True):
     }
 
     event_types -= {"FIP_falling_time", "FIP_rising_time"}
-
+                         
+    # Filter out other streams
+    for ii in ignore:
+        event_types-={ii}
+        
     # Determine time 0 as first go Cue
     if adjust_time:
         t0 = nwb.trials[SESSION_ALIGNMENT][0]
