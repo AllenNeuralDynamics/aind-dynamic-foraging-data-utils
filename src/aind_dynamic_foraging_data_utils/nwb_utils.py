@@ -558,7 +558,7 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
 def create_df_events(nwb_filename, 
                      adjust_time=True, 
                      verbose=True,
-                     ignore = ['sniff_detector']):
+                     ignore=['sniff_detector']):
     """
     returns a tidy dataframe of the events in the nwb file
 
