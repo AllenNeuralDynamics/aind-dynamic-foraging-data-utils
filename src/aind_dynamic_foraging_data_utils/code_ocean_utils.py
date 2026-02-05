@@ -423,10 +423,8 @@ def get_foraging_model_info(
             or df.get("latent_variables") is None
             or df["latent_variables"][0] is None
         ):
-            print(
-                f"Skipping {sess_idx}. Fitted model {model_name}, \
-                 params, or latent variables not found for this session"
-            )
+            print(f"Skipping {sess_idx}. Fitted model {model_name}, \
+                 params, or latent variables not found for this session")
             continue  # skip if no model fits is found for this session
 
         # Fitted parameters
@@ -449,10 +447,8 @@ def get_foraging_model_info(
         choice_prob = np.array(fitted_latent["choice_prob"]).astype(float)
 
         if len(mouse_choice_idx) != np.shape(choice_prob)[1]:
-            print(
-                f"Skipping {sess_idx}. Fitted model {model_name} \
-                  does not have matching number of trials"
-            )
+            print(f"Skipping {sess_idx}. Fitted model {model_name} \
+                  does not have matching number of trials")
             continue  # skip if the fitted choices do not match number of trials
 
         df_trials_fm.loc[mouse_choice_idx, "L_prob"] = choice_prob[0, :]

@@ -1,10 +1,10 @@
 """Testing for utility functions for processing dynamic foraging data."""
 
+import glob
 import unittest
 
 import numpy as np
 import pandas as pd
-import glob
 
 from src.aind_dynamic_foraging_data_utils import alignment, nwb_utils
 
