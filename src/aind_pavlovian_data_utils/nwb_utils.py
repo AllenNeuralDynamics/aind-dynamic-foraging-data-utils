@@ -20,7 +20,7 @@ from pynwb import NWBHDF5IO
 from datetime import date
 
 # If we adjust time_in_session, adjust it to this
-SESSION_ALIGNMENT = "goCue_start_time"
+SESSION_ALIGNMENT = "start_time"
 
 # Tolerance for responses to be outside the response window
 RESPONSE_TIMING_TOLERANCE = 0.005
@@ -667,8 +667,6 @@ def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     # Filter out all fibers
     event_types = {k for k in event_types if any(k.startswith(prefix) for prefix in FIP_prefixes)}
 
-    event_types.add("FIP_falling_time")
-    event_types.add("FIP_rising_time")
 
     # If no FIB data available
     if len(event_types) == 0:
