@@ -57,10 +57,6 @@ def create_single_df_session_inner(nwb):
     """
     df_trials = nwb.trials.to_dataframe()
 
-    # Reformat data
-    choice_history = df_trials.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
-    reward_history = np.vstack([df_trials.rewarded_historyL, df_trials.rewarded_historyR])
-
     # -- Session-based table --
     # - Meta data -
     session_start_time_from_meta = nwb.session_start_time
@@ -102,8 +98,6 @@ def create_single_df_session_inner(nwb):
             nwb_suffix = int(session_json_time.replace("-", ""))
 
     # Ad-hoc bug fixes for some mistyped mouse ID
-    if subject_id in ("689727"):
-        subject_id_from_meta = subject_id
 
     assert subject_id == subject_id_from_meta, (
         f"Subject name from the metadata ({subject_id_from_meta}) does not match "
@@ -173,100 +167,7 @@ def create_single_df_session_inner(nwb):
         [["metadata"], dict_meta.keys()], names=["type", "variable"]
     )
 
-    # - Compute session-level stats -
-    # TODO: Ideally, all these simple stats could be computed in the GUI, and
-    # the GUI sends a copy to the meta session.json file and to the nwb file as well.
 
-    total_trials = len(df_trials)
-    finished_trials = np.sum(~np.isnan(choice_history))
-    reward_trials = np.sum(reward_history)
-
-    reward_rate = reward_trials / finished_trials
-
-    # TODO: add more stats
-    # See code here: https://github.com/AllenNeuralDynamics/map-ephys/blob/
-    # 7a06a5178cc621638d849457abb003151f7234ea/pipeline/foraging_analysis.py#L70C8-L70C8
-    # early_lick_ratio =
-    # double_dipping_ratio =
-    # block_num
-    # mean_block_length
-    # mean_reward_sum
-    # mean_reward_contrast
-    # autowater_num
-    # autowater_ratio
-    #
-    # mean_iti
-    # mean_reward_sum
-    # mean_reward_contrast
-    # ...
-
-    # foraging_eff_func = (
-    #    foraging_eff_baiting if "bait" in nwb.protocol.lower() else foraging_eff_no_baiting
-    # )
-    # foraging_eff, foraging_eff_random_seed = foraging_eff_func(
-    #    reward_rate, p_reward[LEFT, :], p_reward[RIGHT, :]
-    # )
-
-    # -- Add session stats here --
-    dict_session_stat = {
-        "total_trials": total_trials,
-        "finished_trials": finished_trials,
-        "finished_rate": finished_trials / total_trials,
-        "ignore_rate": np.sum(np.isnan(choice_history)) / total_trials,
-        "reward_trials": reward_trials,
-        "reward_rate": reward_rate,
-        # TODO: add more stats here
-    }
-
-    # Generate df_session_stat
-    df_session_stat = pd.DataFrame(dict_session_stat, index=session_index)
-    df_session_stat.columns = pd.MultiIndex.from_product(
-        [["session_stats"], dict_session_stat.keys()],
-        names=["type", "variable"],
-    )
-
-    # -- Add automatic training --
-    if "auto_train_engaged" in df_trials.columns:
-        df_session["auto_train", "curriculum_name"] = (
-            np.nan
-            if df_trials.auto_train_curriculum_name.mode()[0] == "none"
-            else df_trials.auto_train_curriculum_name.mode()[0]
-        )
-        df_session["auto_train", "curriculum_version"] = (
-            np.nan
-            if df_trials.auto_train_curriculum_version.mode()[0] == "none"
-            else df_trials.auto_train_curriculum_version.mode()[0]
-        )
-        df_session["auto_train", "curriculum_schema_version"] = (
-            np.nan
-            if df_trials.auto_train_curriculum_schema_version.mode()[0] == "none"
-            else df_trials.auto_train_curriculum_schema_version.mode()[0]
-        )
-        df_session["auto_train", "current_stage_actual"] = (
-            np.nan
-            if df_trials.auto_train_stage.mode()[0] == "none"
-            else df_trials.auto_train_stage.mode()[0]
-        )
-        df_session["auto_train", "if_overriden_by_trainer"] = (
-            np.nan
-            if all(df_trials.auto_train_stage_overridden.isna())
-            else df_trials.auto_train_stage_overridden.mode()[0]
-        )
-
-        # Add a flag to indicate whether any of the auto train settings were changed
-        # during the training
-        df_session["auto_train", "if_consistent_within_session"] = (
-            len(df_trials.groupby([col for col in df_trials.columns if "auto_train" in col])) == 1
-        )
-    else:
-        for field in [
-            "curriculum_name",
-            "curriculum_version",
-            "curriculum_schema_version",
-            "current_stage_actual",
-            "if_overriden_by_trainer",
-        ]:
-            df_session["auto_train", field] = None
 
     # -- Merge to df_session --
     df_session = pd.concat([df_session, df_session_stat], axis=1)
@@ -345,17 +246,13 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     # Adjust for gaps in trial start/stop, and use the last stop time
     last_stop = df.iloc[-1]["stop_time"]
     df["stop_time"] = df["start_time"].shift(-1, fill_value=last_stop)
-    df = df.rename(columns={"start_time": "bonsai_start_time", "stop_time": "bonsai_stop_time"})
 
-    # We skip these columns because they are how long the valve is open
-    # not the times at which the valves were opened
-    skip_cols = ["right_valve_open_time", "left_valve_open_time"]
 
     # compute times relative to start of trial and start of session
     t0 = nwb.trials[SESSION_ALIGNMENT][0]
     drop_cols = []
     for col in df.columns:
-        if ("time" in col) and (col not in skip_cols):
+        if ("time" in col):
             # Adjust all times relative to start of the first go cue
             if adjust_time:
                 df[col + "_in_session"] = df[col] - t0
@@ -363,194 +260,111 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                 df[col + "_in_session"] = df[col]
 
             # Adjust times relative to go cue on each trial
-            if ("time" in col) and (col not in skip_cols):
+            if ("time" in col):
                 # Here we always align to goCue_start_time, not SESSION_ALIGNMENT
                 # since this aligns events relative to the trial go cue, not the start
                 # of the session
-                df[col + "_in_trial"] = df[col].values - df["goCue_start_time"].values
+                df[col + "_in_trial"] = df[col].values - df["CS_start_time"].values
 
             # Clean up these column names that are not clear
             drop_cols.append(col)
 
     # Add a column of raw time so users can map if they want
-    df[SESSION_ALIGNMENT + "_raw"] = df[SESSION_ALIGNMENT]
+    raw_timepoints = ["start_time", "stop_time", "CS_start_time"]
 
-    # Get lick and reward times
-    key_from_acq = [
-        "left_lick_time",
-        "right_lick_time",
-        "left_reward_delivery_time",
-        "right_reward_delivery_time",
-    ]
-    if adjust_time:
-        events = {key: nwb.acquisition[key].timestamps[:] - t0 for key in key_from_acq}
-    else:
-        events = {key: nwb.acquisition[key].timestamps[:] for key in key_from_acq}
-
-    # Map events to trials
-    # Here we map an event to the most recent goCue
-    df["next_goCue_start_time_in_session"] = df["goCue_start_time_in_session"].shift(
-        -1, fill_value=np.inf
-    )
-    drop_cols.append("next_goCue_start_time_in_session")
-
-    # Create column with CHOICE TIMING TOLERANCE
-    df["next_goCue_start_time_in_session_tolerance"] = (
-        df["next_goCue_start_time_in_session"] - CHOICE_TIMING_TOLERANCE
-    )
-    df["goCue_start_time_in_session_tolerance"] = (
-        df["goCue_start_time_in_session"] - CHOICE_TIMING_TOLERANCE
-    )
-    drop_cols.append("next_goCue_start_time_in_session_tolerance")
-    drop_cols.append("goCue_start_time_in_session_tolerance")
-
-    for event in key_from_acq:
-        event_times = events[event]
-        if event in ["left_lick_time", "right_lick_time"]:
-            times = "_tolerance"
-        else:
-            times = ""
-        df[event] = df.apply(
-            lambda x: event_times[
-                (event_times >= x["goCue_start_time_in_session" + times])
-                & (event_times < x["next_goCue_start_time_in_session" + times])
-            ],
-            axis=1,
-        )
-
-    # Compute time of reward for each trial
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message="All-NaN slice encountered")
-        df["reward_time_in_session"] = df.apply(
-            lambda x: np.nanmin(
-                np.concatenate(
-                    [
-                        [np.nan],
-                        x["right_reward_delivery_time"],
-                        x["left_reward_delivery_time"],
-                    ]
-                )
-            ),
-            axis=1,
-        )
-    df["reward_time_in_trial"] = (
-        df["reward_time_in_session"] - df[SESSION_ALIGNMENT + "_in_session"]
-    )
-
-    # Add annotation of reward types
-    for event in ["right_reward_delivery_time", "left_reward_delivery_time"]:
-        times = events[event]
-        data = nwb.acquisition[event].data[:]
-        mapper = {x[0]: x[1] for x in zip(times, data)}
-        df[event.split("delivery_time")[0] + "type"] = [
-            mapper[x[0]] if len(x) > 0 else np.nan for x in df[event]
-        ]
-
-    # Compute boolean of whether animal was rewarded
-    # AutoWater and manual water is not included in earned_reward
-    df["earned_reward"] = df.rewarded_historyR | df.rewarded_historyL
-    if np.sum(df["right_reward_type"] == "earned") > 0:
-        # We have reward type annotations, checking for backwards compatability
-        df["extra_reward"] = (
-            (df["right_reward_type"] == "manual")
-            | (df["left_reward_type"] == "manual")
-            | (df["right_reward_type"] == "auto")
-            | (df["left_reward_type"] == "auto")
-        )
-    else:
-        df["extra_reward"] = (~df["earned_reward"]) & df["reward_time_in_session"].notnull()
+    
+    df = df.rename(columns = {raw_timepoint : raw_timepoint + '_raw' for raw_timepoint in raw_timepoints})
+    
 
     # Compute time of choice for each trials
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message="All-NaN slice encountered")
-        df["choice_time_in_session"] = df.apply(
-            lambda x: np.nanmin(
-                np.concatenate([[np.nan], x["right_lick_time"], x["left_lick_time"]])
-            ),
-            axis=1,
-        )
-    df["choice_time_in_trial"] = (
-        df["choice_time_in_session"] - df[SESSION_ALIGNMENT + "_in_session"]
-    )
 
-    # Filtering out choices greater than response window
-    slow_choice = (
-        df["choice_time_in_trial"] > df["response_duration"] + RESPONSE_TIMING_TOLERANCE
-    ) & (~df["earned_reward"])
-    df.loc[slow_choice, "choice_time_in_session"] = np.nan
-    df.loc[slow_choice, "choice_time_in_trial"] = np.nan
-    if np.sum(df["choice_time_in_trial"] > df["response_duration"] + RESPONSE_TIMING_TOLERANCE) > 0:
-        warnings.warn("Response time greater than minimum, something unusual happened")
+    key_timepoints = ["US_start_time", "CS_start_time", "start_time", "stop_time"]
+        
+    for key_timepoint in key_timepoints:
+        df[f"{key_timepoint}_in_trial"] = (
+            df[f"{key_timepoint}_in_session"] - df[SESSION_ALIGNMENT + "_in_session"]
+        )
+
+
+
+    # # Filtering out choices greater than response window
+    # slow_choice = (
+    #     df["choice_time_in_trial"] > df["response_duration"] + RESPONSE_TIMING_TOLERANCE
+    # ) & (~df["earned_reward"])
+    # df.loc[slow_choice, "choice_time_in_session"] = np.nan
+    # df.loc[slow_choice, "choice_time_in_trial"] = np.nan
+    # if np.sum(df["choice_time_in_trial"] > df["response_duration"] + RESPONSE_TIMING_TOLERANCE) > 0:
+    #     warnings.warn("Response time greater than minimum, something unusual happened")
 
     # Sanity checks
 
     # prior to 2025/1/1, we did not include manual reward information.
     # This is a conservative estimate.
-    manual_reward_date_cutoff = date(2025, 1, 1)
+    # manual_reward_date_cutoff = date(2025, 1, 1)
 
-    rewarded_df = df.query("earned_reward")
-    if not np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0:
-        if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
-            warnings.warn(
-                "Rewarded trials without reward time. \
-                This is likely due to manual rewards not being recorded in sessions from 2024"
-            )
-        else:
-            raise AssertionError("Rewarded trials without reward time")
+    # rewarded_df = df.query("earned_reward")
+    # if not np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0:
+    #     if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
+    #         warnings.warn(
+    #             "Rewarded trials without reward time. \
+    #             This is likely due to manual rewards not being recorded in sessions from 2024"
+    #         )
+    #     else:
+    #         raise AssertionError("Rewarded trials without reward time")
 
-    assert (
-        np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0
-    ), "Rewarded trials without choice time"
+    # assert (
+    #     np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0
+    # ), "Rewarded trials without choice time"
 
-    earned_df = rewarded_df.query("not extra_reward")
-    if not np.all(earned_df["choice_time_in_session"] <= earned_df["reward_time_in_session"]):
-        if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
-            warnings.warn(
-                "Reward before choice time. \
-                This is likely due to manual rewards not being recorded in sessions from 2024"
-            )
-        else:
-            raise AssertionError("Reward before choice time")
+    # earned_df = rewarded_df.query("not extra_reward")
+    # if not np.all(earned_df["choice_time_in_session"] <= earned_df["reward_time_in_session"]):
+    #     if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
+    #         warnings.warn(
+    #             "Reward before choice time. \
+    #             This is likely due to manual rewards not being recorded in sessions from 2024"
+    #         )
+    #     else:
+    #         raise AssertionError("Reward before choice time")
 
-    assert np.all(
-        rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE
-    ), "Rewarded trial with negative choice_time_in_trial"
+    # assert np.all(
+    #     rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE
+    # ), "Rewarded trial with negative choice_time_in_trial"
 
-    check_rew_time = np.isnan(
-        df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"]
-    )
-    if not np.all(check_rew_time):
-        if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
-            warnings.warn(
-                "Unrewarded trials with reward time. If this was data from 2024, \
-                        this is likely because extra_rewards are not recorded",
-                UserWarning,
-            )
-        else:
-            raise AssertionError("Unrewarded trials with reward time")
+    # check_rew_time = np.isnan(
+    #     df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"]
+    # )
+    # if not np.all(check_rew_time):
+    #     if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
+    #         warnings.warn(
+    #             "Unrewarded trials with reward time. If this was data from 2024, \
+    #                     this is likely because extra_rewards are not recorded",
+    #             UserWarning,
+    #         )
+    #     else:
+    #         raise AssertionError("Unrewarded trials with reward time")
 
-    # Drop columns
-    drop_cols += key_from_acq
-    df = df.drop(columns=drop_cols)
+    # # Drop columns
+    # drop_cols += key_from_acq
+    # df = df.drop(columns=drop_cols)
 
-    if adjust_time and verbose:
-        print(
-            "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
-        )
+    # if adjust_time and verbose:
+    #     print(
+    #         "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
+    #     )
 
-    # Previously lickspout y coordinates were tied, so older data only reported one coordinate
-    # with the adoption of the AIND lickspout stage, we migrated to y1 and y2 coordinates.
-    # older NWB files should be reprocessed to ensure both coordinates are present
-    if ("lickspout_position_y" in df) and ("lickspout_position_y1" not in df):
-        text = (
-            "Independent lickspout y coordinates are not provided. "
-            "This DOES NOT indicate a data error, since older data "
-            "did not allow independent y coordinate movement. It DOES "
-            "indicate this NWB file needs to be reprocessed. Please report to "
-            "https://github.com/AllenNeuralDynamics/aind-dynamic-foraging-data-utils/issues/67"
-        )
+    # # Previously lickspout y coordinates were tied, so older data only reported one coordinate
+    # # with the adoption of the AIND lickspout stage, we migrated to y1 and y2 coordinates.
+    # # older NWB files should be reprocessed to ensure both coordinates are present
+    # if ("lickspout_position_y" in df) and ("lickspout_position_y1" not in df):
+    #     text = (
+    #         "Independent lickspout y coordinates are not provided. "
+    #         "This DOES NOT indicate a data error, since older data "
+    #         "did not allow independent y coordinate movement. It DOES "
+    #         "indicate this NWB file needs to be reprocessed. Please report to "
+    #         "https://github.com/AllenNeuralDynamics/aind-dynamic-foraging-data-utils/issues/67"
+    #     )
 
-        warnings.warn(text, UserWarning)
+    #     warnings.warn(text, UserWarning)
 
     return df
 
@@ -665,9 +479,6 @@ def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True):
 
     # Filter out all fibers
     event_types = {k for k in event_types if any(k.startswith(prefix) for prefix in FIP_prefixes)}
-
-    event_types.add("FIP_falling_time")
-    event_types.add("FIP_rising_time")
 
     # If no FIB data available
     if len(event_types) == 0:
