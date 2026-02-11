@@ -20,7 +20,7 @@ from pynwb import NWBHDF5IO
 from datetime import date
 
 # If we adjust time_in_session, adjust it to this
-SESSION_ALIGNMENT = "goCue_start_time"
+SESSION_ALIGNMENT = "CS_start_time"
 
 # Tolerance for responses to be outside the response window
 RESPONSE_TIMING_TOLERANCE = 0.005
@@ -577,7 +577,6 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True):
         k for k in event_types if not any(k.startswith(prefix) for prefix in FIP_prefixes)
     }
 
-    event_types -= {"FIP_falling_time", "FIP_rising_time"}
 
     # Determine time 0 as first go Cue
     if adjust_time:
