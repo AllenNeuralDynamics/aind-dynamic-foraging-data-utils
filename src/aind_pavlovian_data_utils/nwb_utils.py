@@ -22,11 +22,8 @@ from datetime import date
 # If we adjust time_in_session, adjust it to this
 SESSION_ALIGNMENT = "CS_start_time"
 
-# Tolerance for responses to be outside the response window
-RESPONSE_TIMING_TOLERANCE = 0.005
-
-# Tolerance for responses before the go cue
-CHOICE_TIMING_TOLERANCE = 0.005
+# ms to s conversion 
+MS_TO_S = 1000
 
 
 def load_nwb_from_filename(filename):
@@ -255,16 +252,16 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
         if ("time" in col):
             # Adjust all times relative to start of the first go cue
             if adjust_time:
-                df[col + "_in_session"] = df[col] - t0
+                df[col + "_in_session"] = (df[col] - t0) / MS_TO_S
             else:
-                df[col + "_in_session"] = df[col]
+                df[col + "_in_session"] = df[col] / MS_TO_S
 
             # Adjust times relative to go cue on each trial
             if ("time" in col):
                 # Here we always align to goCue_start_time, not SESSION_ALIGNMENT
                 # since this aligns events relative to the trial go cue, not the start
                 # of the session
-                df[col + "_in_trial"] = df[col].values - df["CS_start_time"].values
+                df[col + "_in_trial"] = (df[col].values - df["CS_start_time"].values) / MS_TO_S
 
             # Clean up these column names that are not clear
             drop_cols.append(col)
@@ -276,95 +273,6 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     df = df.rename(columns = {raw_timepoint : raw_timepoint + '_raw' for raw_timepoint in raw_timepoints})
     
 
-    # Compute time of choice for each trials
-
-    key_timepoints = ["US_start_time", "CS_start_time", "start_time", "stop_time"]
-        
-    for key_timepoint in key_timepoints:
-        df[f"{key_timepoint}_in_trial"] = (
-            df[f"{key_timepoint}_in_session"] - df[SESSION_ALIGNMENT + "_in_session"]
-        )
-
-
-
-    # # Filtering out choices greater than response window
-    # slow_choice = (
-    #     df["choice_time_in_trial"] > df["response_duration"] + RESPONSE_TIMING_TOLERANCE
-    # ) & (~df["earned_reward"])
-    # df.loc[slow_choice, "choice_time_in_session"] = np.nan
-    # df.loc[slow_choice, "choice_time_in_trial"] = np.nan
-    # if np.sum(df["choice_time_in_trial"] > df["response_duration"] + RESPONSE_TIMING_TOLERANCE) > 0:
-    #     warnings.warn("Response time greater than minimum, something unusual happened")
-
-    # Sanity checks
-
-    # prior to 2025/1/1, we did not include manual reward information.
-    # This is a conservative estimate.
-    # manual_reward_date_cutoff = date(2025, 1, 1)
-
-    # rewarded_df = df.query("earned_reward")
-    # if not np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0:
-    #     if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
-    #         warnings.warn(
-    #             "Rewarded trials without reward time. \
-    #             This is likely due to manual rewards not being recorded in sessions from 2024"
-    #         )
-    #     else:
-    #         raise AssertionError("Rewarded trials without reward time")
-
-    # assert (
-    #     np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0
-    # ), "Rewarded trials without choice time"
-
-    # earned_df = rewarded_df.query("not extra_reward")
-    # if not np.all(earned_df["choice_time_in_session"] <= earned_df["reward_time_in_session"]):
-    #     if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
-    #         warnings.warn(
-    #             "Reward before choice time. \
-    #             This is likely due to manual rewards not being recorded in sessions from 2024"
-    #         )
-    #     else:
-    #         raise AssertionError("Reward before choice time")
-
-    # assert np.all(
-    #     rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE
-    # ), "Rewarded trial with negative choice_time_in_trial"
-
-    # check_rew_time = np.isnan(
-    #     df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"]
-    # )
-    # if not np.all(check_rew_time):
-    #     if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
-    #         warnings.warn(
-    #             "Unrewarded trials with reward time. If this was data from 2024, \
-    #                     this is likely because extra_rewards are not recorded",
-    #             UserWarning,
-    #         )
-    #     else:
-    #         raise AssertionError("Unrewarded trials with reward time")
-
-    # # Drop columns
-    # drop_cols += key_from_acq
-    # df = df.drop(columns=drop_cols)
-
-    # if adjust_time and verbose:
-    #     print(
-    #         "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
-    #     )
-
-    # # Previously lickspout y coordinates were tied, so older data only reported one coordinate
-    # # with the adoption of the AIND lickspout stage, we migrated to y1 and y2 coordinates.
-    # # older NWB files should be reprocessed to ensure both coordinates are present
-    # if ("lickspout_position_y" in df) and ("lickspout_position_y1" not in df):
-    #     text = (
-    #         "Independent lickspout y coordinates are not provided. "
-    #         "This DOES NOT indicate a data error, since older data "
-    #         "did not allow independent y coordinate movement. It DOES "
-    #         "indicate this NWB file needs to be reprocessed. Please report to "
-    #         "https://github.com/AllenNeuralDynamics/aind-dynamic-foraging-data-utils/issues/67"
-    #     )
-
-    #     warnings.warn(text, UserWarning)
 
     return df
 
@@ -380,73 +288,67 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True):
     nwb = load_nwb_from_filename(nwb_filename)
 
     # Build list of all event types in acqusition, ignore FIP events (no need for processing folder)
-    event_types = set(nwb.acquisition.keys())
+    # event_types = set(nwb.acquisition.keys())
 
-    channels = ["G", "R", "Iso"]
-    fibers = ["0", "1", "2", "3", "4"]
-    FIP_prefixes = [f"{c}_{f}" for c in channels for f in fibers]
+    # channels = ["G", "R", "Iso"]
+    # fibers = ["0", "1", "2", "3", "4"]
+    # FIP_prefixes = [f"{c}_{f}" for c in channels for f in fibers]
 
-    # Filter out all fibers
-    event_types = {
-        k for k in event_types if not any(k.startswith(prefix) for prefix in FIP_prefixes)
-    }
+    # # Filter out all fibers
+    # event_types = {
+    #     k for k in event_types if not any(k.startswith(prefix) for prefix in FIP_prefixes)
+    # }
 
+    # Version 1 pav nwb has pavlovian evnets in pavlovian event table
+    if 'pavlovian_events' in nwb.processing:
+        df = nwb.processing['pavlovian_events']['pavlovian_events_table'].to_dataframe().reset_index()
+
+        df['timestamp_raw'] = df['timestamp']
+        df['timestamp'] = df['timestamp'] / MS_TO_S
 
     # Determine time 0 as first go Cue
     if adjust_time:
-        t0 = nwb.trials[SESSION_ALIGNMENT][0]
+        t0 = nwb.trials[SESSION_ALIGNMENT][0] / MS_TO_S
+        df['timestamp'] = df['timestamp'] - t0
     else:
         t0 = 0
 
-    # Iterate over event types and build a dataframe of each
-    events = []
-    for e in event_types:
-        # For each event, get timestamps, data, and label
-        raw_stamps = nwb.acquisition[e].timestamps[:]
-        data = nwb.acquisition[e].data[:]
-        labels = [e] * len(data)
-        stamps = raw_stamps - t0
-        df = pd.DataFrame(
-            {"timestamps": stamps, "data": data, "event": labels, "raw_timestamps": raw_stamps}
-        )
-        events.append(df)
+    # # Iterate over event types and build a dataframe of each
+    # events = []
+    # for e in event_types:
+    #     # For each event, get timestamps, data, and label
+    #     raw_stamps = nwb.acquisition[e].timestamps[:]
+    #     data = nwb.acquisition[e].data[:]
+    #     labels = [e] * len(data)
+    #     stamps = raw_stamps - t0
+    #     df = pd.DataFrame(
+    #         {"timestamps": stamps, "data": data, "event": labels, "raw_timestamps": raw_stamps}
+    #     )
+    #     events.append(df)
 
-    # Add keys from trials table
-    trial_events = ["goCue_start_time"]
-    for e in trial_events:
-        raw_stamps = nwb.trials[:][e].values
-        labels = [e] * len(raw_stamps)
-        data = [1] * len(raw_stamps)
-        stamps = raw_stamps - t0
-        df = pd.DataFrame(
-            {"timestamps": stamps, "data": data, "event": labels, "raw_timestamps": raw_stamps}
-        )
-        events.append(df)
+    # # Add keys from trials table
+    # trial_events = ["goCue_start_time"]
+    # for e in trial_events:
+    #     raw_stamps = nwb.trials[:][e].values
+    #     labels = [e] * len(raw_stamps)
+    #     data = [1] * len(raw_stamps)
+    #     stamps = raw_stamps - t0
+    #     df = pd.DataFrame(
+    #         {"timestamps": stamps, "data": data, "event": labels, "raw_timestamps": raw_stamps}
+    #     )
+    #     events.append(df)
 
-    # Build dataframe by concatenating each event
-    df = pd.concat(events)
-    df = df.sort_values(by="timestamps")
-    df = df.dropna(subset="timestamps").reset_index(drop=True)
+    # # Build dataframe by concatenating each event
+    # df = pd.concat(events)
+    # df = df.sort_values(by="timestamps")
+    # df = df.dropna(subset="timestamps").reset_index(drop=True)
 
-    # Add trial index for each event
-    trial_starts = nwb.trials.goCue_start_time[:] - t0
-    last_stop = np.inf
-    trial_index = []
-    for index, e in df.iterrows():
-        starts = np.where(e.timestamps >= trial_starts)[0]
-        if len(starts) == 0:
-            trial_index.append(-1)
-        elif e.timestamps > last_stop:
-            trial_index.append(len(trial_starts))
-        else:
-            trial_index.append(starts[-1])
-    df["trial"] = trial_index
 
     # Sanity check that the first go cue is time 0
-    gocues = df.query("event == @SESSION_ALIGNMENT")
-    if (len(gocues) > 0) and (adjust_time):
-        assert np.isclose(gocues.iloc[0]["timestamps"], 0, rtol=0.01)
-    # TODO, need more checks here for time alignment on trial index.
+    # gocues = df.query("event == @SESSION_ALIGNMENT")
+    # if (len(gocues) > 0) and (adjust_time):
+    #     assert np.isclose(gocues.iloc[0]["timestamps"], 0, rtol=0.01)
+    # # TODO, need more checks here for time alignment on trial index.
 
     if adjust_time and verbose:
         print(
@@ -524,7 +426,7 @@ def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True):
         print(
             "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
         )
-
+    df['timestamps'] = df['timestamps'] / MS_TO_S
     # pivot table based on timestamps
     if not tidy:
         df_pivoted = pd.pivot(df, index="timestamps", columns=["event"], values="data")
