@@ -199,12 +199,19 @@ def _read_hive_partitioned(
             & (ds.field("session_date") <= end)
         )
 
-    # Discover dataset with Hive partitioning
+    # Explicitly declare partition schema as string to avoid PyArrow auto-inferring
+    # subject_id as int32 from directory names that look numeric (e.g. "subject_id=697062").
+    import pyarrow as pa
+
+    partition_schema = ds.partitioning(
+        pa.schema([("subject_id", pa.string())]), flavor="hive"
+    )
+
     dataset = ds.dataset(
         base_path,
         filesystem=fs,
         format="parquet",
-        partitioning=ds.HivePartitioning.discover(),
+        partitioning=partition_schema,
     )
 
     table = dataset.to_table(filter=filter_expr)
