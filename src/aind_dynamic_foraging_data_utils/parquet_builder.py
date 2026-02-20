@@ -221,6 +221,12 @@ def build_session_table(
     # Ensure subject_id is string for consistent joining
     df_sessions["subject_id"] = df_sessions["subject_id"].astype(str)
 
+    # Normalise session_date to plain "YYYY-MM-DD" string so that parquet round-trips
+    # don't silently convert it to datetime64 (which breaks key lookups).
+    df_sessions["session_date"] = pd.to_datetime(df_sessions["session_date"]).dt.strftime(
+        "%Y-%m-%d"
+    )
+
     if verbose:
         print(f"  Loaded {len(df_sessions)} sessions")
 
@@ -429,7 +435,12 @@ def build_trial_and_event_tables(
 
     for idx, (_, row) in enumerate(df.iterrows()):
         subject_id = str(row["subject_id"])
-        session_date = str(row["session_date"])
+        # Ensure session_date is a plain "YYYY-MM-DD" string regardless of how it was stored
+        raw_date = row["session_date"]
+        if hasattr(raw_date, "strftime"):
+            session_date = raw_date.strftime("%Y-%m-%d")
+        else:
+            session_date = str(raw_date)[:10]  # slice handles "2024-01-01 00:00:00" form
         nwb_suffix = row["nwb_suffix"]
         session_id = row["_session_id"]
         is_bad_bowen = bool(row.get("is_bad_bowen_session", False))
