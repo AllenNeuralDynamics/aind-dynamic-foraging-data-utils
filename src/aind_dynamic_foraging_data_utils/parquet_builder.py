@@ -42,6 +42,7 @@ import logging
 import os
 import re
 import warnings
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import pandas as pd
 import pyarrow as pa
@@ -51,6 +52,14 @@ import s3fs
 from aind_dynamic_foraging_data_utils import nwb_utils
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Module-level globals used by worker processes.
+# Set once per worker via _worker_init(); never touched by the main process.
+# ---------------------------------------------------------------------------
+_WORKER_NWB_INDEX = None
+_WORKER_TRIAL_PREFIX = None
+_WORKER_EVENT_PREFIX = None
 
 # ---- Default S3 paths ----
 S3_CACHE_BUCKET = "aind-behavior-data"
@@ -330,6 +339,111 @@ def build_session_table(
 
 
 # ---------------------------------------------------------------------------
+# Parallel worker functions (must be top-level for pickling)
+# ---------------------------------------------------------------------------
+
+
+def _worker_init(nwb_file_index, trial_prefix, event_prefix):
+    """
+    Initializer for ProcessPoolExecutor workers.
+
+    Called once when each worker process starts. Stores shared data as
+    module-level globals so they don't need to be re-pickled for every task.
+
+    Args:
+        nwb_file_index (dict): (subject_id, date, nwb_suffix) → NWB filepath.
+        trial_prefix   (str) : Output prefix for trial parquet files.
+        event_prefix   (str) : Output prefix for event parquet files.
+    """
+    global _WORKER_NWB_INDEX, _WORKER_TRIAL_PREFIX, _WORKER_EVENT_PREFIX
+    _WORKER_NWB_INDEX = nwb_file_index
+    _WORKER_TRIAL_PREFIX = trial_prefix
+    _WORKER_EVENT_PREFIX = event_prefix
+
+
+def _process_single_session(row_dict):
+    """
+    Worker function: process one session and write its trial/event parquet files.
+
+    Reads an NWB file (CO asset → bonsai → bpod priority), runs
+    create_df_trials() and create_df_events(), annotates the rows with session
+    identity, then writes Hive-partitioned parquet.
+
+    This is a top-level function (not a closure or lambda) so that Python's
+    multiprocessing can pickle it. Shared data (NWB index, output prefixes) are
+    accessed via module-level globals set by _worker_init().
+
+    Args:
+        row_dict (dict): One row from the session DataFrame serialised as a dict.
+
+    Returns:
+        dict: {
+            "session_id": str,
+            "status"    : "ok" | "skipped" | "failed",
+            "error"     : str | None,
+        }
+    """
+    nwb_file_index = _WORKER_NWB_INDEX
+    trial_prefix = _WORKER_TRIAL_PREFIX
+    event_prefix = _WORKER_EVENT_PREFIX
+
+    subject_id = str(row_dict["subject_id"])
+
+    # Normalise session_date to plain "YYYY-MM-DD" string
+    raw_date = row_dict["session_date"]
+    if hasattr(raw_date, "strftime"):
+        session_date = raw_date.strftime("%Y-%m-%d")
+    else:
+        session_date = str(raw_date)[:10]
+
+    nwb_suffix = row_dict["nwb_suffix"]
+    session_id = row_dict["_session_id"]
+    is_bad_bowen = bool(row_dict.get("is_bad_bowen_session", False))
+    co_s3_uri = row_dict.get("co_s3_nwb_uri", None)
+
+    # ---- Determine NWB source (same priority as serial version) ----
+    nwb_path = None
+    nwb_data_source = None
+
+    if pd.notna(co_s3_uri) and co_s3_uri != "":
+        nwb_path = co_s3_uri
+        nwb_data_source = "co_asset"
+    elif not is_bad_bowen:
+        suffix_int = int(nwb_suffix) if pd.notna(nwb_suffix) else -1
+        key = (subject_id, session_date, suffix_int)
+        if key in nwb_file_index:
+            nwb_path = nwb_file_index[key]
+            nwb_data_source = (
+                "bpod_s3" if nwb_path.startswith(LOCAL_BPOD_NWB_DIR) else "bonsai_s3"
+            )
+
+    if nwb_path is None:
+        return {"session_id": session_id, "status": "skipped", "error": None}
+
+    # ---- Read NWB and write parquet ----
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            df_trials = nwb_utils.create_df_trials(nwb_path, verbose=False)
+            df_events = nwb_utils.create_df_events(nwb_path, verbose=False)
+
+        for df_out in [df_trials, df_events]:
+            df_out["subject_id"] = subject_id
+            df_out["session_date"] = session_date
+            df_out["nwb_suffix"] = int(nwb_suffix) if pd.notna(nwb_suffix) else None
+            df_out["session_id"] = session_id
+            df_out["nwb_data_source"] = nwb_data_source
+
+        _write_session_parquet(df_trials, trial_prefix, subject_id, session_id)
+        _write_session_parquet(df_events, event_prefix, subject_id, session_id)
+
+        return {"session_id": session_id, "status": "ok", "error": None}
+
+    except Exception as e:
+        return {"session_id": session_id, "status": "failed", "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
 # Trial / event table builder
 # ---------------------------------------------------------------------------
 
@@ -342,18 +456,20 @@ def build_trial_and_event_tables(
     build_metadata_path=None,
     incremental=True,
     max_sessions=None,
+    n_workers=None,
     verbose=True,
 ):
     """
-    Build trial-level and event-level Hive-partitioned parquet tables from NWB files.
+    Build trial-level and event-level Hive-partitioned parquet tables from NWB files,
+    using parallel processing across multiple CPU cores.
 
     For each session in session_df the function:
       1. Determines the NWB file path using priority:
            a. co_s3_nwb_uri  — CO asset S3 URI (best quality)
            b. Local bonsai file from nwb_file_index
            c. Local bpod file from nwb_file_index
-         Bad Bowen sessions (is_bad_bowen_session=True) are skipped if no CO asset URI
-         is available (their bonsai data is unreliable).
+         Bad Bowen sessions (is_bad_bowen_session=True) are skipped if no CO asset
+         URI is available (their bonsai data is unreliable).
       2. Reads the NWB and runs:
            - nwb_utils.create_df_trials()  → AIND minimal trial schema
            - nwb_utils.create_df_events()  → tidy event table
@@ -363,10 +479,17 @@ def build_trial_and_event_tables(
            {trial_output_prefix}/subject_id={subject_id}/{session_id}.parquet
            {event_output_prefix}/subject_id={subject_id}/{session_id}.parquet
 
+    Parallelism:
+      Uses ProcessPoolExecutor (multiprocessing, not threading) because:
+        - pynwb / h5py is not thread-safe for parallel HDF5 reads
+        - numpy operations in create_df_trials() are CPU-bound (GIL matters)
+        - Each session is independent — no shared write paths
+      n_workers defaults to the CO_CPUS environment variable (set by Code Ocean),
+      falling back to os.cpu_count() - 1.
+
     Incremental updates:
-      Previously processed sessions are tracked in build_metadata.json (if
-      build_metadata_path is provided). Only new sessions are processed when
-      incremental=True.
+      Previously processed sessions are tracked in build_metadata.json.
+      Only new sessions are processed when incremental=True.
 
     Args:
         session_df (pd.DataFrame)   : Session table from build_session_table().
@@ -378,6 +501,8 @@ def build_trial_and_event_tables(
                                       track processed sessions. None disables tracking.
         incremental (bool)          : If True, skip already-processed sessions.
         max_sessions (int)          : Process at most this many sessions (useful for tests).
+        n_workers (int | None)      : Number of parallel worker processes. Defaults to
+                                      CO_CPUS env var, then os.cpu_count() - 1.
         verbose (bool)              : Print progress.
 
     Returns:
@@ -426,86 +551,61 @@ def build_trial_and_event_tables(
     if max_sessions is not None:
         df = df.head(max_sessions)
 
+    n_total = len(df)
     if verbose:
-        print(f"Processing {len(df)} sessions (of {len(session_df)} total)...")
+        print(f"Processing {n_total} sessions (of {len(session_df)} total)...")
 
-    # ---- 3. Process each session ----
+    # ---- 3. Resolve number of worker processes ----
+    # CO_CPUS is set by Code Ocean to the number of CPUs allocated to the capsule.
+    if n_workers is None:
+        co_cpus = os.environ.get("CO_CPUS")
+        if co_cpus is not None:
+            n_workers = max(1, int(co_cpus) - 1)  # leave 1 core for the main process
+        else:
+            n_workers = max(1, (os.cpu_count() or 2) - 1)
+
+    if verbose:
+        print(f"Using {n_workers} worker processes (CO_CPUS={os.environ.get('CO_CPUS', 'not set')})")
+
+    # ---- 4. Submit tasks to ProcessPoolExecutor ----
+    # _worker_init sets the NWB index and output prefixes as module-level globals
+    # in each worker process (once on startup), so they don't need to be pickled
+    # with every individual task.
     summary = {"n_processed": 0, "n_skipped": 0, "n_failed": 0, "failed_sessions": []}
     newly_processed = []
 
-    for idx, (_, row) in enumerate(df.iterrows()):
-        subject_id = str(row["subject_id"])
-        # Ensure session_date is a plain "YYYY-MM-DD" string regardless of how it was stored
-        raw_date = row["session_date"]
-        if hasattr(raw_date, "strftime"):
-            session_date = raw_date.strftime("%Y-%m-%d")
-        else:
-            session_date = str(raw_date)[:10]  # slice handles "2024-01-01 00:00:00" form
-        nwb_suffix = row["nwb_suffix"]
-        session_id = row["_session_id"]
-        is_bad_bowen = bool(row.get("is_bad_bowen_session", False))
-        co_s3_uri = row.get("co_s3_nwb_uri", None)
+    row_dicts = [row.to_dict() for _, row in df.iterrows()]
 
-        # Progress logging
-        if verbose and (idx < 5 or idx % 50 == 0):
-            print(f"  [{idx + 1}/{len(df)}] {session_id}")
+    with ProcessPoolExecutor(
+        max_workers=n_workers,
+        initializer=_worker_init,
+        initargs=(nwb_file_index, trial_output_prefix, event_output_prefix),
+    ) as executor:
+        futures = {executor.submit(_process_single_session, rd): rd["_session_id"]
+                   for rd in row_dicts}
 
-        # ---- Determine NWB source ----
-        nwb_path = None
-        nwb_data_source = None
+        for n_done, future in enumerate(as_completed(futures), start=1):
+            result = future.result()
+            session_id = result["session_id"]
+            status = result["status"]
 
-        # Priority 1: CO asset S3 URI
-        if pd.notna(co_s3_uri) and co_s3_uri != "":
-            nwb_path = co_s3_uri
-            nwb_data_source = "co_asset"
+            # Progress logging: first 5 completions, then every 50
+            if verbose and (n_done <= 5 or n_done % 50 == 0):
+                print(f"  [{n_done}/{n_total}] {session_id}  →  {status}")
 
-        # Priority 2/3: Local NWB file (skip for bad Bowen sessions — bonsai data unreliable)
-        elif not is_bad_bowen:
-            suffix_int = int(nwb_suffix) if pd.notna(nwb_suffix) else -1
-            key = (subject_id, session_date, suffix_int)
-            if key in nwb_file_index:
-                nwb_path = nwb_file_index[key]
-                nwb_data_source = (
-                    "bpod_s3" if nwb_path.startswith(LOCAL_BPOD_NWB_DIR) else "bonsai_s3"
+            if status == "ok":
+                newly_processed.append(session_id)
+                summary["n_processed"] += 1
+            elif status == "skipped":
+                summary["n_skipped"] += 1
+            else:  # "failed"
+                logger.warning("Failed to process %s: %s", session_id, result["error"])
+                summary["n_failed"] += 1
+                summary["failed_sessions"].append(
+                    {"session_id": session_id, "error": result["error"]}
                 )
 
-        # Skip if no NWB found
-        if nwb_path is None:
-            if is_bad_bowen:
-                logger.debug("Skipping bad Bowen session (no CO asset): %s", session_id)
-            else:
-                logger.debug("NWB not found for session: %s", session_id)
-            summary["n_skipped"] += 1
-            continue
-
-        # ---- Read NWB and extract trial / event data ----
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                df_trials = nwb_utils.create_df_trials(nwb_path, verbose=False)
-                df_events = nwb_utils.create_df_events(nwb_path, verbose=False)
-
-            # Annotate both tables with session identity
-            for df_out in [df_trials, df_events]:
-                df_out["subject_id"] = subject_id
-                df_out["session_date"] = session_date
-                df_out["nwb_suffix"] = int(nwb_suffix) if pd.notna(nwb_suffix) else None
-                df_out["session_id"] = session_id
-                df_out["nwb_data_source"] = nwb_data_source
-
-            # ---- Write partitioned parquet ----
-            _write_session_parquet(df_trials, trial_output_prefix, subject_id, session_id)
-            _write_session_parquet(df_events, event_output_prefix, subject_id, session_id)
-
-            newly_processed.append(session_id)
-            summary["n_processed"] += 1
-
-        except Exception as e:
-            logger.warning("Failed to process %s: %s", session_id, e)
-            summary["n_failed"] += 1
-            summary["failed_sessions"].append({"session_id": session_id, "error": str(e)})
-
-    # ---- 4. Update build metadata ----
+    # ---- 5. Update build metadata ----
     if build_metadata_path is not None and newly_processed:
         all_processed = list(processed_sessions | set(newly_processed))
         _write_json(
