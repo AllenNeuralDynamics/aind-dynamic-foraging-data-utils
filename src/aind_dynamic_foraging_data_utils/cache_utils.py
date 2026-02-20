@@ -8,6 +8,7 @@ reading data for specific mice never touches irrelevant partitions.
 S3 source: s3://aind-behavior-data/foraging_cache/
 
 Tables:
+
   session_table.parquet         — one row per session (all session-level metadata)
   trial_table/subject_id=<id>/  — one row per trial (AIND minimal schema)
   event_table/subject_id=<id>/  — one row per behavioral event

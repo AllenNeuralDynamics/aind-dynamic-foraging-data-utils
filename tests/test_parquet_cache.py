@@ -16,7 +16,8 @@ import unittest
 import pandas as pd
 import pyarrow.parquet as pq
 
-from src.aind_dynamic_foraging_data_utils import cache_utils, parquet_builder
+from aind_dynamic_foraging_data_utils import cache_utils
+from aind_dynamic_foraging_data_utils.foraging_cache import parquet_builder
 
 
 # ---------------------------------------------------------------------------
