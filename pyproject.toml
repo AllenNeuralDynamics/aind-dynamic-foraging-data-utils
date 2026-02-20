@@ -23,7 +23,8 @@ dependencies = [
     'hdmf_zarr',
     'aind-data-access-api',
     'codeocean',
-    's3fs >= 2025.10.0'
+    's3fs >= 2025.10.0',
+    'pyarrow'
 ]
 
 [project.optional-dependencies]
