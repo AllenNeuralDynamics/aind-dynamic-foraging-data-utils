@@ -75,6 +75,70 @@ LOCAL_BPOD_NWB_DIR = "/data/foraging_nwb_bpod"
 # ---- CSV with Bowen incomplete sessions (CO asset IDs) ----
 BOWEN_INCOMPLETE_CSV = "/data/Bowen_IncompleteSessions-081225.csv"
 
+# ---------------------------------------------------------------------------
+# Canonical trial-table column definitions
+# ---------------------------------------------------------------------------
+#
+# The trial table is produced by three different readers:
+#   1. AIND reader  (nwb_utils.create_df_trials)  — CO asset + modern bonsai
+#   2. Legacy bonsai reader                        — older bonsai NWBs
+#   3. Legacy bpod reader                          — bpod NWBs
+#
+# Readers 2 and 3 produce:
+#   • different time-column names  (e.g. bare "goCue_start_time" vs AIND's
+#     "goCue_start_time_in_session")
+#   • 22 "bpod_backup_*" columns that are raw hardware backup data with no
+#     behavioral meaning and are NOT present in the AIND reader output
+#
+# Policy: we keep the AIND / CO-asset column set as canonical and drop
+# bpod_backup_* columns on write so they never pollute the parquet schema.
+#
+# Type-normalisation map: resolves the remaining cross-session type conflicts
+# (e.g. bool in one session, string or double in another).
+# Resolution rule — highest-priority type wins:
+#   string  >  double  >  int64  >  bool
+# (string can represent any value; double absorbs NaN; int64 > int32)
+
+_TRIAL_COLS_TO_DROP_PREFIX = ("bpod_backup_",)
+
+_CANONICAL_TRIAL_COL_TYPES: dict = {
+    # bool vs string (can contain 'none') → string
+    "auto_train_engaged":              "string",
+    "auto_train_stage_overridden":     "string",
+    "session_wide_control":            "string",
+    # bool vs double (no string; True/False → 1.0/0.0; NaN-safe) → double
+    "bait_left":                       "double",
+    "bait_right":                      "double",
+    "laser_on_trial":                  "double",
+    # int32 vs int64 → int64
+    "auto_waterL":                     "int64",
+    "auto_waterR":                     "int64",
+    "non_autowater_trial":             "int64",
+    # double vs int64 (no string) → double
+    "laser_condition_probability":     "double",
+    "laser_duration":                  "double",
+    "laser_end_offset":                "double",
+    "laser_frequency":                 "double",
+    "laser_power":                     "double",
+    "laser_pulse_duration":            "double",
+    "laser_rampingdown":               "double",
+    "laser_start_offset":              "double",
+    "laser_wavelength":                "double",
+    # double/int/string (ever string) → string
+    "laser_condition":                 "string",
+    "laser_end":                       "string",
+    "laser_location":                  "string",
+    "laser_protocol":                  "string",
+    "laser_start":                     "string",
+    "left_reward_type":                "string",
+    "right_reward_type":               "string",
+}
+
+# Event table: only the 'data' column conflicts (double vs string → string)
+_CANONICAL_EVENT_COL_TYPES: dict = {
+    "data": "string",
+}
+
 
 # ---------------------------------------------------------------------------
 # Public helpers
@@ -939,6 +1003,39 @@ def _write_session_parquet(df, output_prefix, subject_id, session_id):
     # directory name type and is consistent across all sources.
     if "subject_id" in df.columns:
         df["subject_id"] = df["subject_id"].astype(str)
+
+    # Drop bpod_backup_* columns — raw hardware backup data not present in
+    # the AIND reader output; keeping them causes schema conflicts and bloat.
+    bpod_cols = [c for c in df.columns
+                 if any(c.startswith(pfx) for pfx in _TRIAL_COLS_TO_DROP_PREFIX)]
+    if bpod_cols:
+        df = df.drop(columns=bpod_cols)
+
+    # Apply canonical types to resolve cross-session type conflicts.
+    # Determine which map to use: event tables always have 'event' column.
+    canonical = (
+        _CANONICAL_EVENT_COL_TYPES
+        if "event" in df.columns
+        else _CANONICAL_TRIAL_COL_TYPES
+    )
+    for col, target in canonical.items():
+        if col not in df.columns:
+            continue
+        try:
+            if target == "string":
+                # Convert non-null values to str; store as pandas StringDtype
+                # so that all-NaN float columns become string-null (not double)
+                # which is what pa.Table.from_pandas stores as pa.string().
+                df[col] = (
+                    df[col].where(df[col].isna(), df[col].astype(str))
+                    .astype(pd.StringDtype())
+                )
+            elif target == "double":
+                df[col] = pd.to_numeric(df[col], errors="coerce").astype(float)
+            elif target == "int64":
+                df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+        except Exception as exc:
+            logger.warning("Type normalisation failed for column %r: %s", col, exc)
 
     # Sanitise object columns:
     #   1. Convert array-like values to their string representation so PyArrow

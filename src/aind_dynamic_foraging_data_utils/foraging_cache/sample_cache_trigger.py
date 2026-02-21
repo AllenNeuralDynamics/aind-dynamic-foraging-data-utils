@@ -234,50 +234,75 @@ print("=" * 60)
 # ---------------------------------------------------------------------------
 # 9.  Example queries
 # ---------------------------------------------------------------------------
+import pyarrow as pa
+import pyarrow.dataset as ds
+
+# The trial/event tables are Hive-partitioned by subject_id.
+# We tell PyArrow that subject_id is a string (not int) so the partition
+# directory name matches the in-file column type.
+_HIVE_PART = ds.partitioning(
+    schema=pa.schema([("subject_id", pa.string())]), flavor="hive"
+)
+
+def _open_table(prefix):
+    """Open a local Hive-partitioned parquet table as a PyArrow dataset."""
+    return ds.dataset(prefix, format="parquet", partitioning=_HIVE_PART)
+
 print("\n" + "=" * 60)
 print("EXAMPLE QUERIES")
 print("=" * 60)
 
-# ---- Query 1: First 5 sessions (key columns) ----
-print("\n--- First 5 sessions (key columns) ---")
+# ---- Load session table once (flat parquet, no partitioning) ----
 df_sess = pd.read_parquet(SESSION_OUT)
+
+# ---- Query 1: Session-level query on the session table ----
+# Example: high-performing Uncoupled sessions (foraging_eff > 0.8)
+print("\n--- Session query: Uncoupled tasks with foraging_eff > 0.8 ---")
+selected = df_sess.query("task.str.contains('Uncoupled') and foraging_eff > 0.8")
 print(
-    df_sess[["_session_id", "subject_id", "session_date", "nwb_data_source",
-             "finished_trials", "foraging_eff", "task"]]
-    .head(5)
+    selected[["_session_id", "subject_id", "session_date",
+              "finished_trials", "foraging_eff", "task"]]
     .to_string(index=False)
 )
 
-# ---- Query 2: First 5 trials of an example session ----
-example_session_id = df_sess["_session_id"].iloc[0]
-example_subject_id = df_sess["subject_id"].iloc[0]
+# ---- Query 2: Load trial history for all selected sessions ----
+# Push the subject_id filter down to the partition level, then filter
+# to the exact session IDs in memory.
+print(f"\n--- Trial history for {len(selected)} selected sessions ---")
+selected_subjects  = selected["subject_id"].unique().tolist()
+selected_session_ids = selected["_session_id"].tolist()
 
-print(f"\n--- First 5 trials of session '{example_session_id}' ---")
-df_trials = pd.read_parquet(
-    f"{TRIAL_OUT}/subject_id={example_subject_id}/{example_session_id}.parquet"
+df_trials_all = (
+    _open_table(TRIAL_OUT)
+    .to_table(filter=ds.field("subject_id").isin(selected_subjects))
+    .to_pandas()
+    .query("session_id in @selected_session_ids")
+    .reset_index(drop=True)
 )
 TRIAL_DISPLAY_COLS = [
     c for c in [
-        "session_id", "start_time", "stop_time",
-        "animal_response", "earned_reward",
+        "session_id", "animal_response", "earned_reward",
         "rewarded_historyL", "rewarded_historyR",
         "reward_probabilityL", "reward_probabilityR",
-        "nwb_data_source",
     ]
-    if c in df_trials.columns
+    if c in df_trials_all.columns
 ]
-print(f"  Total trials : {len(df_trials)}")
-print(df_trials[TRIAL_DISPLAY_COLS].head(5).to_string(index=False))
+print(f"  Total trials across {len(selected)} sessions : {len(df_trials_all)}")
+print(df_trials_all[TRIAL_DISPLAY_COLS].head(10).to_string(index=False))
 
-# ---- Query 3: First 10 events of the same session ----
-print(f"\n--- First 10 events of session '{example_session_id}' ---")
-df_events = pd.read_parquet(
-    f"{EVENT_OUT}/subject_id={example_subject_id}/{example_session_id}.parquet"
+# ---- Query 3: Load event history for all selected sessions ----
+print(f"\n--- Event history for {len(selected)} selected sessions ---")
+df_events_all = (
+    _open_table(EVENT_OUT)
+    .to_table(filter=ds.field("subject_id").isin(selected_subjects))
+    .to_pandas()
+    .query("session_id in @selected_session_ids")
+    .reset_index(drop=True)
 )
-print(f"  Total events : {len(df_events)}")
-print(f"  Event types  : {sorted(df_events['event'].unique().tolist())}")
+print(f"  Total events across {len(selected)} sessions : {len(df_events_all)}")
+print(f"  Event types : {sorted(df_events_all['event'].unique().tolist())}")
 print(
-    df_events[["session_id", "timestamps", "event", "data", "nwb_data_source"]]
+    df_events_all[["session_id", "timestamps", "event", "data"]]
     .head(10)
     .to_string(index=False)
 )
