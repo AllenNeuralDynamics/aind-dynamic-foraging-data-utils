@@ -335,10 +335,11 @@ def _process_single_session(row_dict):
 
     Returns:
         dict: {
-            "session_id": str,
-            "status"    : "ok" | "skipped" | "failed",
-            "reader"    : "aind" | "legacy" | None,
-            "error"     : str | None,
+            "session_id" : str,
+            "status"     : "ok" | "skipped" | "failed",
+            "data_source": "co_asset" | "bonsai_s3" | "bpod_s3" | None,
+            "reader"     : "aind" | "aind_fallback_legacy" | "legacy_bpod" | None,
+            "error"      : str | None,
         }
     """
     from aind_dynamic_foraging_data_utils.foraging_cache import nwb_reader_aind, nwb_reader_legacy
@@ -381,7 +382,13 @@ def _process_single_session(row_dict):
             )
 
     if nwb_path is None:
-        return {"session_id": session_id, "status": "skipped", "reader": None, "error": None}
+        return {
+            "session_id": session_id,
+            "status": "skipped",
+            "data_source": None,
+            "reader": None,
+            "error": None,
+        }
 
     # ---- Read NWB using try-AIND-then-fallback strategy ----
     try:
@@ -402,12 +409,19 @@ def _process_single_session(row_dict):
         return {
             "session_id": session_id,
             "status": "ok",
+            "data_source": nwb_data_source,
             "reader": reader_used,
             "error": None,
         }
 
     except Exception as e:
-        return {"session_id": session_id, "status": "failed", "reader": None, "error": str(e)}
+        return {
+            "session_id": session_id,
+            "status": "failed",
+            "data_source": nwb_data_source,
+            "reader": None,
+            "error": str(e),
+        }
 
 
 def _read_session_with_fallback(nwb_path, nwb_data_source, session_id):
@@ -423,7 +437,10 @@ def _read_session_with_fallback(nwb_path, nwb_data_source, session_id):
       2. On AINDReaderQualityError: log warning, fall back to legacy reader
 
     Returns:
-        (df_trials, df_events, reader_used_str)
+        (df_trials, df_events, reader_used_str) where reader_used_str is one of:
+          "aind"                -- data-util AIND reader, succeeded directly
+          "aind_fallback_legacy"-- AIND reader failed, fell back to legacy bonsai reader
+          "legacy_bpod"         -- legacy bpod reader used directly (no AIND attempted)
     """
     from aind_dynamic_foraging_data_utils.foraging_cache import nwb_reader_aind, nwb_reader_legacy
     from aind_dynamic_foraging_data_utils.foraging_cache.nwb_reader_aind import (
@@ -434,7 +451,7 @@ def _read_session_with_fallback(nwb_path, nwb_data_source, session_id):
     if nwb_data_source == "bpod_s3":
         df_trials = nwb_reader_legacy.read_trials(nwb_path)
         df_events = nwb_reader_legacy.read_events(nwb_path)
-        return df_trials, df_events, "legacy"
+        return df_trials, df_events, "legacy_bpod"
 
     # bonsai / CO asset -> try AIND first, fall back to legacy
     try:
@@ -450,7 +467,7 @@ def _read_session_with_fallback(nwb_path, nwb_data_source, session_id):
         )
         df_trials = nwb_reader_legacy.read_trials(nwb_path)
         df_events = nwb_reader_legacy.read_events(nwb_path)
-        return df_trials, df_events, "legacy"
+        return df_trials, df_events, "aind_fallback_legacy"
 
 
 # ---------------------------------------------------------------------------
@@ -483,12 +500,18 @@ def build_trial_and_event_tables(
 
     Returns:
         dict: {
-            "n_processed": int,
-            "n_skipped":   int,
-            "n_failed":    int,
-            "n_aind_reader": int,
-            "n_legacy_reader": int,
-            "failed_sessions": list[dict],
+            "n_processed"          : int,
+            "n_skipped"            : int,
+            "n_failed"             : int,
+            # data-source breakdown (processed sessions only)
+            "n_co_asset"           : int,
+            "n_bonsai_s3"          : int,
+            "n_bpod_s3"            : int,
+            # reader breakdown (processed sessions only)
+            "n_aind_reader"        : int,   # data-util AIND reader, no fallback
+            "n_aind_fallback_legacy": int,  # AIND tried, fell back to legacy bonsai
+            "n_legacy_bpod"        : int,   # legacy bpod reader used directly
+            "failed_sessions"      : list[dict],
         }
     """
     # ---- 0. Build NWB file index if not provided ----
@@ -547,11 +570,29 @@ def build_trial_and_event_tables(
         "n_processed": 0,
         "n_skipped": 0,
         "n_failed": 0,
+        # data-source breakdown
+        "n_co_asset": 0,
+        "n_bonsai_s3": 0,
+        "n_bpod_s3": 0,
+        # reader breakdown
         "n_aind_reader": 0,
-        "n_legacy_reader": 0,
+        "n_aind_fallback_legacy": 0,
+        "n_legacy_bpod": 0,
         "failed_sessions": [],
     }
     newly_processed = []
+
+    # Labels used in per-session log lines
+    _READER_LABEL = {
+        "aind": "aind",
+        "aind_fallback_legacy": "aind->legacy",
+        "legacy_bpod": "legacy_bpod",
+    }
+    _SOURCE_LABEL = {
+        "co_asset": "CO-asset",
+        "bonsai_s3": "bonsai-S3",
+        "bpod_s3": "bpod-S3",
+    }
 
     row_dicts = [row.to_dict() for _, row in df.iterrows()]
 
@@ -567,26 +608,43 @@ def build_trial_and_event_tables(
             result = future.result()
             session_id = result["session_id"]
             status = result["status"]
+            data_source = result.get("data_source")
             reader = result.get("reader")
 
             if verbose and (n_done <= 5 or n_done % 50 == 0):
-                reader_tag = f" [{reader}]" if reader else ""
-                print(f"  [{n_done}/{n_total}] {session_id}  ->  {status}{reader_tag}")
+                src_tag = f"  src={_SOURCE_LABEL.get(data_source, data_source)}" if data_source else ""
+                rdr_tag = f"  rdr={_READER_LABEL.get(reader, reader)}" if reader else ""
+                print(f"  [{n_done}/{n_total}] {session_id}  ->  {status}{src_tag}{rdr_tag}")
 
             if status == "ok":
                 newly_processed.append(session_id)
                 summary["n_processed"] += 1
+                if data_source == "co_asset":
+                    summary["n_co_asset"] += 1
+                elif data_source == "bonsai_s3":
+                    summary["n_bonsai_s3"] += 1
+                elif data_source == "bpod_s3":
+                    summary["n_bpod_s3"] += 1
                 if reader == "aind":
                     summary["n_aind_reader"] += 1
-                elif reader == "legacy":
-                    summary["n_legacy_reader"] += 1
+                elif reader == "aind_fallback_legacy":
+                    summary["n_aind_fallback_legacy"] += 1
+                elif reader == "legacy_bpod":
+                    summary["n_legacy_bpod"] += 1
             elif status == "skipped":
                 summary["n_skipped"] += 1
             else:  # "failed"
-                logger.warning("Failed to process %s: %s", session_id, result["error"])
+                logger.warning(
+                    "Failed to process %s  (src=%s): %s",
+                    session_id, data_source, result["error"],
+                )
                 summary["n_failed"] += 1
                 summary["failed_sessions"].append(
-                    {"session_id": session_id, "error": result["error"]}
+                    {
+                        "session_id": session_id,
+                        "data_source": data_source,
+                        "error": result["error"],
+                    }
                 )
 
     # ---- 5. Update build metadata ----
@@ -598,12 +656,35 @@ def build_trial_and_event_tables(
         )
 
     if verbose:
+        n_ok = summary["n_processed"]
+        n_skip = summary["n_skipped"]
+        n_fail = summary["n_failed"]
         print(
-            f"\nDone! Processed: {summary['n_processed']} "
-            f"(AIND: {summary['n_aind_reader']}, Legacy: {summary['n_legacy_reader']}), "
-            f"Skipped: {summary['n_skipped']}, "
-            f"Failed: {summary['n_failed']}"
+            f"\n{'='*50}\n"
+            f"Build summary\n"
+            f"{'='*50}\n"
+            f"  Total submitted : {n_ok + n_skip + n_fail}\n"
+            f"  Processed (ok)  : {n_ok}\n"
+            f"  Skipped         : {n_skip}\n"
+            f"  Failed          : {n_fail}\n"
+            f"\n"
+            f"  Data source breakdown (processed sessions):\n"
+            f"    CO asset       : {summary['n_co_asset']}\n"
+            f"    Bonsai S3      : {summary['n_bonsai_s3']}\n"
+            f"    bpod S3        : {summary['n_bpod_s3']}\n"
+            f"\n"
+            f"  NWB reader breakdown (processed sessions):\n"
+            f"    AIND data-util (direct)     : {summary['n_aind_reader']}\n"
+            f"    AIND->legacy fallback        : {summary['n_aind_fallback_legacy']}\n"
+            f"    Legacy bpod (direct)         : {summary['n_legacy_bpod']}\n"
+            f"{'='*50}"
         )
+        if summary["failed_sessions"]:
+            print(f"\n  Failed sessions ({n_fail}):")
+            for fs in summary["failed_sessions"][:20]:
+                print(f"    [{fs.get('data_source', '?')}] {fs['session_id']}  --  {fs['error']}")
+            if n_fail > 20:
+                print(f"    ... and {n_fail - 20} more (see failed_sessions in return value)")
 
     return summary
 
