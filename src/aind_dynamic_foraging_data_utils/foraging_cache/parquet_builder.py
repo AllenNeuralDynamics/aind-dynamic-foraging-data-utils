@@ -103,35 +103,35 @@ _TRIAL_COLS_TO_DROP_PREFIX = ("bpod_backup_",)
 
 _CANONICAL_TRIAL_COL_TYPES: dict = {
     # bool vs string (can contain 'none') → string
-    "auto_train_engaged":              "string",
-    "auto_train_stage_overridden":     "string",
-    "session_wide_control":            "string",
+    "auto_train_engaged": "string",
+    "auto_train_stage_overridden": "string",
+    "session_wide_control": "string",
     # bool vs double (no string; True/False → 1.0/0.0; NaN-safe) → double
-    "bait_left":                       "double",
-    "bait_right":                      "double",
-    "laser_on_trial":                  "double",
+    "bait_left": "double",
+    "bait_right": "double",
+    "laser_on_trial": "double",
     # int32 vs int64 → int64
-    "auto_waterL":                     "int64",
-    "auto_waterR":                     "int64",
-    "non_autowater_trial":             "int64",
+    "auto_waterL": "int64",
+    "auto_waterR": "int64",
+    "non_autowater_trial": "int64",
     # double vs int64 (no string) → double
-    "laser_condition_probability":     "double",
-    "laser_duration":                  "double",
-    "laser_end_offset":                "double",
-    "laser_frequency":                 "double",
-    "laser_power":                     "double",
-    "laser_pulse_duration":            "double",
-    "laser_rampingdown":               "double",
-    "laser_start_offset":              "double",
-    "laser_wavelength":                "double",
+    "laser_condition_probability": "double",
+    "laser_duration": "double",
+    "laser_end_offset": "double",
+    "laser_frequency": "double",
+    "laser_power": "double",
+    "laser_pulse_duration": "double",
+    "laser_rampingdown": "double",
+    "laser_start_offset": "double",
+    "laser_wavelength": "double",
     # double/int/string (ever string) → string
-    "laser_condition":                 "string",
-    "laser_end":                       "string",
-    "laser_location":                  "string",
-    "laser_protocol":                  "string",
-    "laser_start":                     "string",
-    "left_reward_type":                "string",
-    "right_reward_type":               "string",
+    "laser_condition": "string",
+    "laser_end": "string",
+    "laser_location": "string",
+    "laser_protocol": "string",
+    "laser_start": "string",
+    "left_reward_type": "string",
+    "right_reward_type": "string",
 }
 
 # Event table: only the 'data' column conflicts (double vs string → string)
@@ -276,7 +276,7 @@ def _read_existing_session_table(path):
     try:
         if path.startswith("s3://"):
             fs = s3fs.S3FileSystem(anon=False)
-            s3_path = path[len("s3://"):]
+            s3_path = path[len("s3://") :]
             if not fs.exists(s3_path):
                 return None
             return pd.read_parquet(path, filesystem=fs)
@@ -297,6 +297,7 @@ def _add_s3_location_parallel(df, n_workers=100, verbose=True):
     fs = s3fs.S3FileSystem()
 
     def _glob_one(location):
+        """Glob S3 for a .nwb file under the given location prefix."""
         try:
             hits = fs.glob(f"{location}/**/*.nwb")
             return f"s3://{hits[0]}" if hits else ""
@@ -323,7 +324,7 @@ def _add_s3_location_parallel(df, n_workers=100, verbose=True):
     return df
 
 
-def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):
+def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):  # noqa: C901
     """Query docDB for CO assets for the given subject_ids and merge onto df_sessions.
 
     Populates 'co_asset_id' and 'co_s3_nwb_uri' columns via targeted
@@ -355,11 +356,14 @@ def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):
     # Chunk subjects and query docDB in parallel threads to avoid a single
     # massive regex and to overlap network latency.
     CHUNK_SIZE = 10
-    chunks = [subject_ids[i:i + CHUNK_SIZE] for i in range(0, len(subject_ids), CHUNK_SIZE)]
+    chunks = [subject_ids[i : i + CHUNK_SIZE] for i in range(0, len(subject_ids), CHUNK_SIZE)]
     n_threads = min(len(chunks), 20)
 
     if verbose:
-        print(f"    Using {n_threads} threads for {len(chunks)} docDB query chunks ({CHUNK_SIZE} subjects/chunk)")
+        print(
+            f"    Using {n_threads} threads for {len(chunks)} docDB query chunks "
+            f"({CHUNK_SIZE} subjects/chunk)"
+        )
 
     co_frames = []
     with ThreadPoolExecutor(max_workers=n_threads) as pool:
@@ -413,7 +417,7 @@ def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):
         return df_sessions
 
     if verbose:
-        print(f"  Fetching S3 locations (parallel)...")
+        print("  Fetching S3 locations (parallel)...")
     df_co = _add_s3_location_parallel(df_co, verbose=verbose)
 
     co_lookup = {}
@@ -425,18 +429,15 @@ def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):
         )
 
     def _lookup(r, field):
+        """Return co_asset_id ('id') or co_s3_nwb_uri ('uri') for row r."""
         val = co_lookup.get(
             (str(r["subject_id"]), str(r["session_date"]), r["nwb_suffix"]),
             (pd.NA, pd.NA),
         )
         return val[0] if field == "id" else val[1]
 
-    df_sessions["co_asset_id"] = df_sessions.apply(
-        lambda r: _lookup(r, "id"), axis=1
-    )
-    df_sessions["co_s3_nwb_uri"] = df_sessions.apply(
-        lambda r: _lookup(r, "uri"), axis=1
-    )
+    df_sessions["co_asset_id"] = df_sessions.apply(lambda r: _lookup(r, "id"), axis=1)
+    df_sessions["co_s3_nwb_uri"] = df_sessions.apply(lambda r: _lookup(r, "uri"), axis=1)
 
     n_matched = df_sessions["co_asset_id"].notna().sum()
     if verbose:
@@ -450,7 +451,7 @@ def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):
 # ---------------------------------------------------------------------------
 
 
-def build_session_table(
+def build_session_table(  # noqa: C901
     output_path=SESSION_TABLE_S3_URI,
     bowen_csv_path=BOWEN_INCOMPLETE_CSV,
     include_co_assets=True,
@@ -510,9 +511,7 @@ def build_session_table(
     df_han["subject_id"] = df_han["subject_id"].astype(str)
 
     # Normalise session_date to plain "YYYY-MM-DD" string
-    df_han["session_date"] = pd.to_datetime(df_han["session_date"]).dt.strftime(
-        "%Y-%m-%d"
-    )
+    df_han["session_date"] = pd.to_datetime(df_han["session_date"]).dt.strftime("%Y-%m-%d")
 
     # Compute stable session ID
     df_han["_session_id"] = _compute_session_id(df_han)
@@ -526,7 +525,9 @@ def build_session_table(
         df_existing = _read_existing_session_table(output_path)
         if df_existing is not None:
             if verbose:
-                print(f"  Loaded existing session table: {len(df_existing)} rows from {output_path}")
+                print(
+                    f"  Loaded existing session table: {len(df_existing)} rows from {output_path}"
+                )
         else:
             if verbose:
                 print("  No existing session table found — falling back to full build.")
@@ -572,9 +573,7 @@ def build_session_table(
                 df_existing.loc[missing_co_mask, "subject_id"].unique().tolist()
             )
             try:
-                df_existing = _enrich_with_co_assets(
-                    df_existing, recheck_subjects, verbose=verbose
-                )
+                df_existing = _enrich_with_co_assets(df_existing, recheck_subjects, verbose=verbose)
             except Exception as e:
                 warnings.warn(f"Failed to recheck CO assets: {e}")
         elif verbose:
@@ -645,11 +644,6 @@ def _process_single_session(row_dict):
             "error"      : str | None,
         }
     """
-    from aind_dynamic_foraging_data_utils.foraging_cache import nwb_reader_aind, nwb_reader_legacy
-    from aind_dynamic_foraging_data_utils.foraging_cache.nwb_reader_aind import (
-        AINDReaderQualityError,
-    )
-
     nwb_file_index = _WORKER_NWB_INDEX
     trial_prefix = _WORKER_TRIAL_PREFIX
     event_prefix = _WORKER_EVENT_PREFIX
@@ -680,9 +674,7 @@ def _process_single_session(row_dict):
         key = (subject_id, session_date, suffix_int)
         if key in nwb_file_index:
             nwb_path = nwb_file_index[key]
-            nwb_data_source = (
-                "bpod_s3" if nwb_path.startswith(LOCAL_BPOD_NWB_DIR) else "bonsai_s3"
-            )
+            nwb_data_source = "bpod_s3" if nwb_path.startswith(LOCAL_BPOD_NWB_DIR) else "bonsai_s3"
 
     if nwb_path is None:
         return {
@@ -778,7 +770,7 @@ def _read_session_with_fallback(nwb_path, nwb_data_source, session_id):
 # ---------------------------------------------------------------------------
 
 
-def build_trial_and_event_tables(
+def build_trial_and_event_tables(  # noqa: C901
     session_df,
     trial_output_prefix,
     event_output_prefix,
@@ -860,7 +852,9 @@ def build_trial_and_event_tables(
             n_workers = max(1, (os.cpu_count() or 2) - 1)
 
     if verbose:
-        print(f"Using {n_workers} worker processes (CO_CPUS={os.environ.get('CO_CPUS', 'not set')})")
+        print(
+            f"Using {n_workers} worker processes (CO_CPUS={os.environ.get('CO_CPUS', 'not set')})"
+        )
 
     # ---- 4. Submit tasks to ProcessPoolExecutor ----
     summary = {
@@ -898,8 +892,9 @@ def build_trial_and_event_tables(
         initializer=_worker_init,
         initargs=(nwb_file_index, trial_output_prefix, event_output_prefix),
     ) as executor:
-        futures = {executor.submit(_process_single_session, rd): rd["_session_id"]
-                   for rd in row_dicts}
+        futures = {
+            executor.submit(_process_single_session, rd): rd["_session_id"] for rd in row_dicts
+        }
 
         for n_done, future in enumerate(as_completed(futures), start=1):
             result = future.result()
@@ -909,7 +904,9 @@ def build_trial_and_event_tables(
             reader = result.get("reader")
 
             if verbose and (n_done <= 5 or n_done % 50 == 0):
-                src_tag = f"  src={_SOURCE_LABEL.get(data_source, data_source)}" if data_source else ""
+                src_tag = (
+                    f"  src={_SOURCE_LABEL.get(data_source, data_source)}" if data_source else ""
+                )
                 rdr_tag = f"  rdr={_READER_LABEL.get(reader, reader)}" if reader else ""
                 print(f"  [{n_done}/{n_total}] {session_id}  ->  {status}{src_tag}{rdr_tag}")
 
@@ -933,7 +930,9 @@ def build_trial_and_event_tables(
             else:  # "failed"
                 logger.warning(
                     "Failed to process %s  (src=%s): %s",
-                    session_id, data_source, result["error"],
+                    session_id,
+                    data_source,
+                    result["error"],
                 )
                 summary["n_failed"] += 1
                 summary["failed_sessions"].append(
@@ -991,7 +990,7 @@ def build_trial_and_event_tables(
 # ---------------------------------------------------------------------------
 
 
-def _write_session_parquet(df, output_prefix, subject_id, session_id):
+def _write_session_parquet(df, output_prefix, subject_id, session_id):  # noqa: C901
     """
     Write a single session's DataFrame to a Hive-partitioned parquet file.
 
@@ -1006,18 +1005,15 @@ def _write_session_parquet(df, output_prefix, subject_id, session_id):
 
     # Drop bpod_backup_* columns — raw hardware backup data not present in
     # the AIND reader output; keeping them causes schema conflicts and bloat.
-    bpod_cols = [c for c in df.columns
-                 if any(c.startswith(pfx) for pfx in _TRIAL_COLS_TO_DROP_PREFIX)]
+    bpod_cols = [
+        c for c in df.columns if any(c.startswith(pfx) for pfx in _TRIAL_COLS_TO_DROP_PREFIX)
+    ]
     if bpod_cols:
         df = df.drop(columns=bpod_cols)
 
     # Apply canonical types to resolve cross-session type conflicts.
     # Determine which map to use: event tables always have 'event' column.
-    canonical = (
-        _CANONICAL_EVENT_COL_TYPES
-        if "event" in df.columns
-        else _CANONICAL_TRIAL_COL_TYPES
-    )
+    canonical = _CANONICAL_EVENT_COL_TYPES if "event" in df.columns else _CANONICAL_TRIAL_COL_TYPES
     for col, target in canonical.items():
         if col not in df.columns:
             continue
@@ -1027,8 +1023,7 @@ def _write_session_parquet(df, output_prefix, subject_id, session_id):
                 # so that all-NaN float columns become string-null (not double)
                 # which is what pa.Table.from_pandas stores as pa.string().
                 df[col] = (
-                    df[col].where(df[col].isna(), df[col].astype(str))
-                    .astype(pd.StringDtype())
+                    df[col].where(df[col].isna(), df[col].astype(str)).astype(pd.StringDtype())
                 )
             elif target == "double":
                 df[col] = pd.to_numeric(df[col], errors="coerce").astype(float)
@@ -1070,7 +1065,7 @@ def _write_session_parquet(df, output_prefix, subject_id, session_id):
 
     if output_prefix.startswith("s3://"):
         fs = s3fs.S3FileSystem(anon=False)
-        s3_base = output_prefix[len("s3://"):]
+        s3_base = output_prefix[len("s3://") :]
         out_path = f"{s3_base}/{partition_dir}/{session_id}.parquet"
         with fs.open(out_path, "wb") as f:
             pq.write_table(table, f)
@@ -1086,7 +1081,7 @@ def _write_dataframe_as_parquet(df, path):
 
     if path.startswith("s3://"):
         fs = s3fs.S3FileSystem(anon=False)
-        s3_path = path[len("s3://"):]
+        s3_path = path[len("s3://") :]
         with fs.open(s3_path, "wb") as f:
             pq.write_table(table, f)
     else:
@@ -1101,7 +1096,7 @@ def _write_json(data, path):
     json_str = json.dumps(data, indent=2)
     if path.startswith("s3://"):
         fs = s3fs.S3FileSystem(anon=False)
-        with fs.open(path[len("s3://"):], "w") as f:
+        with fs.open(path[len("s3://") :], "w") as f:
             f.write(json_str)
     else:
         parent = os.path.dirname(path)
@@ -1115,7 +1110,7 @@ def _read_json(path):
     """Read a JSON file from a local path or S3 URI and return as dict."""
     if path.startswith("s3://"):
         fs = s3fs.S3FileSystem(anon=False)
-        with fs.open(path[len("s3://"):], "r") as f:
+        with fs.open(path[len("s3://") :], "r") as f:
             return json.load(f)
     else:
         with open(path, "r") as f:

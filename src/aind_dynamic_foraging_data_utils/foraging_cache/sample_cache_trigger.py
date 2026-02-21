@@ -32,17 +32,17 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
-from aind_dynamic_foraging_data_utils.foraging_cache import parquet_builder
+from aind_dynamic_foraging_data_utils.foraging_cache import parquet_builder  # noqa: E402
 
 # ---- Output paths ----
-SCRATCH      = "/root/capsule/scratch/foraging_cache"
-SESSION_OUT  = f"{SCRATCH}/session_table_sample.parquet"
-TRIAL_OUT    = f"{SCRATCH}/trial_table"
-EVENT_OUT    = f"{SCRATCH}/event_table"
-META_OUT     = f"{SCRATCH}/build_metadata.json"
+SCRATCH = "/root/capsule/scratch/foraging_cache"
+SESSION_OUT = f"{SCRATCH}/session_table_sample.parquet"
+TRIAL_OUT = f"{SCRATCH}/trial_table"
+EVENT_OUT = f"{SCRATCH}/event_table"
+META_OUT = f"{SCRATCH}/build_metadata.json"
 
-N_SAMPLE     = 100
-RANDOM_SEED  = 42
+N_SAMPLE = 100
+RANDOM_SEED = 42
 
 os.makedirs(SCRATCH, exist_ok=True)
 
@@ -84,12 +84,15 @@ print("\n" + "=" * 60)
 print("Step 3: Filtering to sessions with local NWB files")
 print("=" * 60)
 
+
 def _has_local_nwb(row):
+    """Return True if row has a matching entry in nwb_index."""
     suffix = int(row["nwb_suffix"]) if pd.notna(row["nwb_suffix"]) else -1
     return (str(row["subject_id"]), str(row["session_date"]), suffix) in nwb_index
 
+
 has_local = df_all.apply(_has_local_nwb, axis=1)
-not_bad   = ~df_all["is_bad_bowen_session"]
+not_bad = ~df_all["is_bad_bowen_session"]
 
 df_avail = df_all[not_bad & has_local].copy()
 
@@ -129,7 +132,9 @@ for date, quota in quotas.items():
     sampled_frames.append(pool.sample(n=n_pick, random_state=int(rng.integers(1e9))))
 
 df_sample = pd.concat(sampled_frames, ignore_index=True)
-print(f"  Sample size : {len(df_sample)} sessions across {df_sample['session_date'].nunique()} dates")
+print(
+    f"  Sample size : {len(df_sample)} sessions across {df_sample['session_date'].nunique()} dates"
+)
 print(f"  Date range  : {df_sample['session_date'].min()} -> {df_sample['session_date'].max()}")
 
 # ---------------------------------------------------------------------------
@@ -143,13 +148,13 @@ sample_subjects = sorted(df_sample["subject_id"].unique().tolist())
 print(f"  Unique subjects in sample: {len(sample_subjects)}")
 
 df_sample = parquet_builder._enrich_with_co_assets(
-    df_sample, sample_subjects, verbose=True,
+    df_sample,
+    sample_subjects,
+    verbose=True,
 )
 
 # Refresh nwb_data_source now that CO assets are populated
-df_sample["nwb_data_source"] = df_sample.apply(
-    parquet_builder._assign_nwb_data_source, axis=1
-)
+df_sample["nwb_data_source"] = df_sample.apply(parquet_builder._assign_nwb_data_source, axis=1)
 
 has_co = df_sample["co_s3_nwb_uri"].notna() & (df_sample["co_s3_nwb_uri"] != "")
 print(f"  With CO asset : {has_co.sum()}")
@@ -192,28 +197,34 @@ print("\n" + "=" * 60)
 print("FINAL SUMMARY")
 print("=" * 60)
 
-print(f"\n  [Session pool]")
+print("\n  [Session pool]")
 print(f"    Han table total              : {len(df_all)}")
 print(f"    Bad Bowen sessions excluded  : {(~not_bad).sum()}")
 print(f"    Processable (local NWB)      : {len(df_avail)}")
-print(f"    Date range                   : {df_avail['session_date'].min()} -> {df_avail['session_date'].max()}")
+print(
+    f"    Date range                   : {df_avail['session_date'].min()} "
+    f"-> {df_avail['session_date'].max()}"
+)
 print(f"    Unique dates in pool         : {df_avail['session_date'].nunique()}")
 
 print(f"\n  [Sample  (n={len(df_sample)})]")
 print(f"    Unique dates covered         : {df_sample['session_date'].nunique()}")
-print(f"    Date range                   : {df_sample['session_date'].min()} -> {df_sample['session_date'].max()}")
+print(
+    f"    Date range                   : {df_sample['session_date'].min()} "
+    f"-> {df_sample['session_date'].max()}"
+)
 print(f"    With CO asset                : {has_co.sum()}")
 print(f"    Local only                   : {(~has_co).sum()}")
 
-print(f"\n  [Build results]")
+print("\n  [Build results]")
 print(f"    Processed (ok)               : {summary['n_processed']}")
 print(f"    Skipped (no NWB found)       : {summary['n_skipped']}")
 print(f"    Failed                       : {summary['n_failed']}")
-print(f"\n    Data source breakdown:")
+print("\n    Data source breakdown:")
 print(f"      CO asset                   : {summary['n_co_asset']}")
 print(f"      Bonsai S3                  : {summary['n_bonsai_s3']}")
 print(f"      bpod S3                    : {summary['n_bpod_s3']}")
-print(f"\n    NWB reader breakdown:")
+print("\n    NWB reader breakdown:")
 print(f"      AIND data-util (direct)    : {summary['n_aind_reader']}")
 print(f"      AIND->legacy fallback      : {summary['n_aind_fallback_legacy']}")
 print(f"      Legacy bpod (direct)       : {summary['n_legacy_bpod']}")
@@ -221,11 +232,11 @@ print(f"      Legacy bpod (direct)       : {summary['n_legacy_bpod']}")
 if summary["failed_sessions"]:
     print(f"\n    Failed sessions ({summary['n_failed']}):")
     for fs in summary["failed_sessions"][:20]:
-        print(f"      [{fs.get('data_source','?')}] {fs['session_id']}  --  {fs['error']}")
+        print(f"      [{fs.get('data_source', '?')}] {fs['session_id']}  --  {fs['error']}")
     if summary["n_failed"] > 20:
         print(f"      ... and {summary['n_failed'] - 20} more")
 
-print(f"\n  [Output files]")
+print("\n  [Output files]")
 print(f"    Session table parquet        : {SESSION_OUT}")
 print(f"    Trial parquet files          : {len(trial_files)}  ->  {TRIAL_OUT}")
 print(f"    Event parquet files          : {len(event_files)}  ->  {EVENT_OUT}")
@@ -234,7 +245,7 @@ print("=" * 60)
 # ---------------------------------------------------------------------------
 # 9.  Example queries (DuckDB)
 # ---------------------------------------------------------------------------
-import duckdb
+import duckdb  # noqa: E402
 
 print("\n" + "=" * 60)
 print("EXAMPLE QUERIES")
