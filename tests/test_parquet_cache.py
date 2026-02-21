@@ -20,7 +20,6 @@ import pyarrow.parquet as pq
 
 from aind_dynamic_foraging_data_utils.foraging_cache import parquet_builder
 
-
 # ---------------------------------------------------------------------------
 # 1. _parse_nwb_filename
 # ---------------------------------------------------------------------------
@@ -82,7 +81,7 @@ class TestBuildNwbFileIndex(unittest.TestCase):
         # Create dummy files (content doesn't matter — only filenames are parsed)
         for fname in [
             "behavior_123456_2024-01-01_09-00-00.nwb",  # new bonsai format
-            "789012_2023-06-15_14-30-00.nwb",            # old bonsai format
+            "789012_2023-06-15_14-30-00.nwb",  # old bonsai format
         ]:
             open(os.path.join(self.bonsai_dir, fname), "w").close()
 
@@ -117,9 +116,9 @@ class TestBuildNwbFileIndex(unittest.TestCase):
         for key in index.keys():
             self.assertIsInstance(key, tuple)
             self.assertEqual(len(key), 3)
-            self.assertIsInstance(key[0], str)   # subject_id
-            self.assertIsInstance(key[1], str)   # session_date
-            self.assertIsInstance(key[2], int)   # nwb_suffix
+            self.assertIsInstance(key[0], str)  # subject_id
+            self.assertIsInstance(key[1], str)  # session_date
+            self.assertIsInstance(key[2], int)  # nwb_suffix
 
 
 # ---------------------------------------------------------------------------
@@ -161,9 +160,9 @@ class TestBuildSessionTableRoundTrip(unittest.TestCase):
             ):
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    df_out = parquet_builder.build_session_table(
+                    parquet_builder.build_session_table(
                         output_path=out_path,
-                        bowen_csv_path="/nonexistent/path.csv",  # triggers warning; returns empty set
+                        bowen_csv_path="/nonexistent/path.csv",  # triggers warning
                         include_co_assets=False,
                         verbose=False,
                     )
@@ -285,23 +284,32 @@ class TestTrialEventRoundTrip(unittest.TestCase):
             self.assertGreater(summary["n_processed"], 0)
 
             # Read back via duckdb
-            df_trials = duckdb.sql(f"""
-                SELECT * FROM read_parquet('{trial_prefix}/**/*.parquet', hive_partitioning=true, union_by_name=true)
-                WHERE CAST(subject_id AS VARCHAR) = '{self.TEST_SUBJECT_ID}'
-            """).df()
-            
-            df_events = duckdb.sql(f"""
-                SELECT * FROM read_parquet('{event_prefix}/**/*.parquet', hive_partitioning=true, union_by_name=true)
-                WHERE CAST(subject_id AS VARCHAR) = '{self.TEST_SUBJECT_ID}'
-            """).df()
+            df_trials = duckdb.sql(
+                f"SELECT * FROM read_parquet('{trial_prefix}/**/*.parquet',"
+                f" hive_partitioning=true, union_by_name=true)"
+                f" WHERE CAST(subject_id AS VARCHAR) = '{self.TEST_SUBJECT_ID}'"
+            ).df()
+
+            df_events = duckdb.sql(
+                f"SELECT * FROM read_parquet('{event_prefix}/**/*.parquet',"
+                f" hive_partitioning=true, union_by_name=true)"
+                f" WHERE CAST(subject_id AS VARCHAR) = '{self.TEST_SUBJECT_ID}'"
+            ).df()
 
             # Both tables should be non-empty
             self.assertGreater(len(df_trials), 0, "Trial table is empty")
             self.assertGreater(len(df_events), 0, "Event table is empty")
 
             # Required columns in trial table
-            for col in ["subject_id", "session_date", "nwb_suffix", "session_id",
-                        "earned_reward", "animal_response", "nwb_data_source"]:
+            for col in [
+                "subject_id",
+                "session_date",
+                "nwb_suffix",
+                "session_id",
+                "earned_reward",
+                "animal_response",
+                "nwb_data_source",
+            ]:
                 self.assertIn(col, df_trials.columns, f"Trial table missing column: {col}")
 
             # Required columns in event table

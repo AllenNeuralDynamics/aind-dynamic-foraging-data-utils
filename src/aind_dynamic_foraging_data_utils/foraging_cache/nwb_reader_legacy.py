@@ -15,7 +15,9 @@ The trade-off is that the output schema is simpler: lick times are stored as
 arrays per trial (``left_lick_time``, ``right_lick_time``), and reward-type
 annotations may be absent for older sessions.
 
-Source: https://github.com/AllenNeuralDynamics/aind-foraging-behavior-bonsai-basic/blob/main/code/process_nwbs.py
+Source:
+    https://github.com/AllenNeuralDynamics/aind-foraging-behavior-bonsai-basic/blob/main/code/process_nwbs.py
+
 """
 
 import logging
@@ -29,9 +31,10 @@ logger = logging.getLogger(__name__)
 
 def _load_nwb_pynwb(nwb_path):
     """Load an NWB file with pynwb (HDF5) or hdmf_zarr (Zarr/S3)."""
-    from pynwb import NWBHDF5IO
-    from hdmf_zarr import NWBZarrIO
     import os
+
+    from hdmf_zarr import NWBZarrIO
+    from pynwb import NWBHDF5IO
 
     if os.path.isdir(nwb_path) or (nwb_path.startswith("s3://") and nwb_path.endswith(".nwb")):
         io = NWBZarrIO(nwb_path, mode="r")
@@ -112,9 +115,7 @@ def read_trials(nwb_path):
             warnings.simplefilter("ignore")
             nwb, io = _load_nwb_pynwb(nwb_path)
     except Exception as exc:
-        logger.info(
-            "pynwb failed for %s (%s), falling back to h5py", nwb_path, exc
-        )
+        logger.info("pynwb failed for %s (%s), falling back to h5py", nwb_path, exc)
         use_h5py_fallback = True
 
     try:
@@ -151,9 +152,7 @@ def read_events(nwb_path):
             warnings.simplefilter("ignore")
             nwb, io = _load_nwb_pynwb(nwb_path)
     except Exception as exc:
-        logger.info(
-            "pynwb failed for %s (%s), falling back to h5py", nwb_path, exc
-        )
+        logger.info("pynwb failed for %s (%s), falling back to h5py", nwb_path, exc)
         use_h5py_fallback = True
 
     try:
@@ -186,14 +185,18 @@ def _compute_df_trial(nwb, nwb_path):
     # --- Reward columns ---
     if "earned_reward" not in df_trial.columns:
         if "rewarded_historyL" in df_trial.columns and "rewarded_historyR" in df_trial.columns:
-            df_trial["earned_reward"] = df_trial["rewarded_historyL"] | df_trial["rewarded_historyR"]
+            df_trial["earned_reward"] = (
+                df_trial["rewarded_historyL"] | df_trial["rewarded_historyR"]
+            )
         else:
             df_trial["earned_reward"] = False
 
     # Compute autowater vs earned distinction
     if "auto_waterL" in df_trial.columns and "auto_waterR" in df_trial.columns:
         df_trial["non_autowater_trial"] = ~(df_trial["auto_waterL"] | df_trial["auto_waterR"])
-        df_trial["reward_non_autowater"] = df_trial["earned_reward"] & df_trial["non_autowater_trial"]
+        df_trial["reward_non_autowater"] = (
+            df_trial["earned_reward"] & df_trial["non_autowater_trial"]
+        )
     else:
         df_trial["non_autowater_trial"] = True
         df_trial["reward_non_autowater"] = df_trial["earned_reward"]
@@ -218,9 +221,11 @@ def _compute_df_trial(nwb, nwb_path):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             df_trial["reaction_time"] = df_trial.apply(
-                lambda row: _first_lick_time(row) - row["goCue_start_time"]
-                if _first_lick_time(row) is not np.nan
-                else np.nan,
+                lambda row: (
+                    _first_lick_time(row) - row["goCue_start_time"]
+                    if _first_lick_time(row) is not np.nan
+                    else np.nan
+                ),
                 axis=1,
             )
 
@@ -241,10 +246,7 @@ def _compute_df_events(nwb):
     channels = ["G", "R", "Iso"]
     fibers = ["0", "1", "2", "3", "4"]
     fip_prefixes = [f"{c}_{f}" for c in channels for f in fibers]
-    event_types = {
-        k for k in event_types
-        if not any(k.startswith(pfx) for pfx in fip_prefixes)
-    }
+    event_types = {k for k in event_types if not any(k.startswith(pfx) for pfx in fip_prefixes)}
     event_types -= {"FIP_falling_time", "FIP_rising_time", "sniff_detector"}
 
     events = []
@@ -252,11 +254,13 @@ def _compute_df_events(nwb):
         try:
             raw_stamps = nwb.acquisition[e].timestamps[:]
             data = nwb.acquisition[e].data[:]
-            df = pd.DataFrame({
-                "timestamps": raw_stamps,
-                "data": data,
-                "event": e,
-            })
+            df = pd.DataFrame(
+                {
+                    "timestamps": raw_stamps,
+                    "data": data,
+                    "event": e,
+                }
+            )
             events.append(df)
         except Exception:
             continue
@@ -318,8 +322,12 @@ def _compute_df_events_h5py(nwb_path):
 
         for key in f["acquisition"].keys():
             # Skip FIP channels
-            if any(key.startswith(pfx) for pfx in
-                   [f"{c}_{fi}" for c in ["G", "R", "Iso"] for fi in ["0", "1", "2", "3", "4"]]):
+            if any(
+                key.startswith(pfx)
+                for pfx in [
+                    f"{c}_{fi}" for c in ["G", "R", "Iso"] for fi in ["0", "1", "2", "3", "4"]
+                ]
+            ):
                 continue
             if key in ("FIP_falling_time", "FIP_rising_time", "sniff_detector"):
                 continue
@@ -330,11 +338,13 @@ def _compute_df_events_h5py(nwb_path):
             try:
                 stamps = grp["timestamps"][:]
                 data = grp["data"][:] if "data" in grp else np.ones(len(stamps))
-                df = pd.DataFrame({
-                    "timestamps": stamps,
-                    "data": data,
-                    "event": key,
-                })
+                df = pd.DataFrame(
+                    {
+                        "timestamps": stamps,
+                        "data": data,
+                        "event": key,
+                    }
+                )
                 events.append(df)
             except Exception:
                 continue
