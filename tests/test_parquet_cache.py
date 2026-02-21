@@ -1,22 +1,23 @@
 """
-Tests for parquet_builder and cache_utils modules.
+Tests for parquet_builder module.
 
 Test structure:
   1. Unit tests for _parse_nwb_filename (no I/O)
   2. Unit tests for build_nwb_file_index (uses a temp directory)
   3. Integration test: build_session_table → parquet round-trip (mocked Han session table)
-  4. Integration test: build_trial_and_event_tables → cache_utils query round-trip
+  4. Integration test: build_trial_and_event_tables → duckdb query round-trip
      (uses real NWB files from tests/nwb/)
 """
 
 import os
 import tempfile
 import unittest
+import warnings
 
+import duckdb
 import pandas as pd
 import pyarrow.parquet as pq
 
-from aind_dynamic_foraging_data_utils import cache_utils
 from aind_dynamic_foraging_data_utils.foraging_cache import parquet_builder
 
 
@@ -158,12 +159,14 @@ class TestBuildSessionTableRoundTrip(unittest.TestCase):
                 "aind_analysis_arch_result_access.han_pipeline.get_session_table",
                 return_value=mock_df,
             ):
-                df_out = parquet_builder.build_session_table(
-                    output_path=out_path,
-                    bowen_csv_path="/nonexistent/path.csv",  # triggers warning; returns empty set
-                    include_co_assets=False,
-                    verbose=False,
-                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    df_out = parquet_builder.build_session_table(
+                        output_path=out_path,
+                        bowen_csv_path="/nonexistent/path.csv",  # triggers warning; returns empty set
+                        include_co_assets=False,
+                        verbose=False,
+                    )
 
             # Verify parquet was written and has expected shape
             self.assertTrue(os.path.exists(out_path))
@@ -185,12 +188,14 @@ class TestBuildSessionTableRoundTrip(unittest.TestCase):
                 "aind_analysis_arch_result_access.han_pipeline.get_session_table",
                 return_value=mock_df,
             ):
-                df_out = parquet_builder.build_session_table(
-                    output_path=out_path,
-                    bowen_csv_path="/nonexistent/path.csv",
-                    include_co_assets=False,
-                    verbose=False,
-                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    df_out = parquet_builder.build_session_table(
+                        output_path=out_path,
+                        bowen_csv_path="/nonexistent/path.csv",
+                        include_co_assets=False,
+                        verbose=False,
+                    )
 
             # The row with data_source="bpod" should map to "bpod_s3"
             bpod_row = df_out[df_out["data_source"] == "bpod"]
@@ -202,7 +207,7 @@ class TestBuildSessionTableRoundTrip(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 4. build_trial_and_event_tables + cache_utils round-trip
+# 4. build_trial_and_event_tables + duckdb round-trip
 # ---------------------------------------------------------------------------
 
 
@@ -211,7 +216,7 @@ class TestTrialEventRoundTrip(unittest.TestCase):
     Integration test using real NWB files from tests/nwb/.
 
     Builds trial and event tables for those sessions, writes them to a local temp
-    directory, then reads them back via cache_utils and checks correctness.
+    directory, then reads them back via duckdb and checks correctness.
     """
 
     TEST_NWB_DIR = "./tests/nwb"
@@ -244,7 +249,7 @@ class TestTrialEventRoundTrip(unittest.TestCase):
 
     def test_trial_event_round_trip(self):
         """
-        Build trial/event tables from test NWBs and read back via cache_utils.
+        Build trial/event tables from test NWBs and read back via duckdb.
         Checks row counts > 0 and required columns exist.
         """
         import glob
@@ -279,15 +284,16 @@ class TestTrialEventRoundTrip(unittest.TestCase):
             # At least some sessions should be processed
             self.assertGreater(summary["n_processed"], 0)
 
-            # Read back via cache_utils
-            df_trials = cache_utils.get_trial_table(
-                subject_ids=[self.TEST_SUBJECT_ID],
-                trial_table_prefix=trial_prefix,
-            )
-            df_events = cache_utils.get_event_table(
-                subject_ids=[self.TEST_SUBJECT_ID],
-                event_table_prefix=event_prefix,
-            )
+            # Read back via duckdb
+            df_trials = duckdb.sql(f"""
+                SELECT * FROM read_parquet('{trial_prefix}/**/*.parquet', hive_partitioning=true, union_by_name=true)
+                WHERE CAST(subject_id AS VARCHAR) = '{self.TEST_SUBJECT_ID}'
+            """).df()
+            
+            df_events = duckdb.sql(f"""
+                SELECT * FROM read_parquet('{event_prefix}/**/*.parquet', hive_partitioning=true, union_by_name=true)
+                WHERE CAST(subject_id AS VARCHAR) = '{self.TEST_SUBJECT_ID}'
+            """).df()
 
             # Both tables should be non-empty
             self.assertGreater(len(df_trials), 0, "Trial table is empty")
@@ -303,7 +309,7 @@ class TestTrialEventRoundTrip(unittest.TestCase):
                 self.assertIn(col, df_events.columns, f"Event table missing column: {col}")
 
             # All trial rows should belong to expected subject
-            self.assertTrue((df_trials["subject_id"] == self.TEST_SUBJECT_ID).all())
+            self.assertTrue((df_trials["subject_id"].astype(str) == self.TEST_SUBJECT_ID).all())
 
     def test_incremental_skips_processed(self):
         """
