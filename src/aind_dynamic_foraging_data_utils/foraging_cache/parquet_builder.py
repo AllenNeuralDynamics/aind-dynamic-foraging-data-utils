@@ -325,7 +325,31 @@ def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):
     df_co = df_co.dropna(subset=["_subject_id"])
 
     if verbose:
-        print(f"  Found {len(df_co)} CO assets. Fetching S3 locations (parallel)...")
+        print(f"  Found {len(df_co)} CO assets from docDB (all sessions for queried subjects)")
+
+    # Filter to only CO assets that match sessions in df_sessions, so we
+    # don't waste time S3-globbing thousands of irrelevant assets.
+    session_keys = set(
+        zip(
+            df_sessions["subject_id"].astype(str),
+            df_sessions["session_date"].astype(str),
+            df_sessions["nwb_suffix"],
+        )
+    )
+    match_mask = [
+        (row["_subject_id"], row["_session_date"], row["_nwb_suffix"]) in session_keys
+        for _, row in df_co.iterrows()
+    ]
+    df_co = df_co[match_mask]
+
+    if verbose:
+        print(f"  Narrowed to {len(df_co)} CO assets matching requested sessions")
+
+    if len(df_co) == 0:
+        return df_sessions
+
+    if verbose:
+        print(f"  Fetching S3 locations (parallel)...")
     df_co = _add_s3_location_parallel(df_co, verbose=verbose)
 
     co_lookup = {}
