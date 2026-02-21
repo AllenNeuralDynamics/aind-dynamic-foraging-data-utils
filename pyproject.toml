@@ -24,7 +24,8 @@ dependencies = [
     'aind-data-access-api',
     'codeocean',
     's3fs >= 2025.10.0',
-    'pyarrow'
+    'pyarrow',
+    'duckdb'
 ]
 
 [project.optional-dependencies]
