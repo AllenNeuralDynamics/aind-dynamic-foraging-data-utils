@@ -935,16 +935,38 @@ def _write_session_parquet(df, output_prefix, subject_id, session_id):
     """
     df = df.copy()
 
-    # Sanitise object columns that contain array-like values
+    # Always store subject_id as string so it matches the Hive partition
+    # directory name type and is consistent across all sources.
+    if "subject_id" in df.columns:
+        df["subject_id"] = df["subject_id"].astype(str)
+
+    # Sanitise object columns:
+    #   1. Convert array-like values to their string representation so PyArrow
+    #      can store them (lick-time lists etc.).
+    #   2. Cast mixed string+number columns to string (e.g. event ``data``
+    #      column that holds 'earned'/'auto' alongside numeric values).
+    #   3. Drop all-null object columns — pynwb sometimes returns these as
+    #      float NaN, which PyArrow stores as ``double``.  Across sessions the
+    #      same column may be ``string`` in one file and ``double`` in another,
+    #      which breaks cross-file schema merging.  Omitting the column
+    #      entirely is safe: PyArrow fills it with ``null`` when merging.
+    cols_to_drop = []
     for col in df.select_dtypes(include="object").columns:
         sample_vals = df[col].dropna()
         if len(sample_vals) == 0:
+            cols_to_drop.append(col)
             continue
         first = sample_vals.iloc[0]
         if hasattr(first, "__len__") and not isinstance(first, str):
             df[col] = df[col].apply(
                 lambda x: str(list(x)) if hasattr(x, "__len__") and not isinstance(x, str) else x
             )
+        else:
+            has_str = sample_vals.apply(type).eq(str).any()
+            has_num = sample_vals.apply(lambda v: isinstance(v, (int, float))).any()
+            if has_str and has_num:
+                df[col] = df[col].astype(str)
+    df = df.drop(columns=cols_to_drop)
 
     table = pa.Table.from_pandas(df, preserve_index=False)
     partition_dir = f"subject_id={subject_id}"

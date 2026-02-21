@@ -230,3 +230,54 @@ print(f"    Session table parquet        : {SESSION_OUT}")
 print(f"    Trial parquet files          : {len(trial_files)}  ->  {TRIAL_OUT}")
 print(f"    Event parquet files          : {len(event_files)}  ->  {EVENT_OUT}")
 print("=" * 60)
+
+# ---------------------------------------------------------------------------
+# 9.  Example queries
+# ---------------------------------------------------------------------------
+print("\n" + "=" * 60)
+print("EXAMPLE QUERIES")
+print("=" * 60)
+
+# ---- Query 1: First 5 sessions (key columns) ----
+print("\n--- First 5 sessions (key columns) ---")
+df_sess = pd.read_parquet(SESSION_OUT)
+print(
+    df_sess[["_session_id", "subject_id", "session_date", "nwb_data_source",
+             "finished_trials", "foraging_eff", "task"]]
+    .head(5)
+    .to_string(index=False)
+)
+
+# ---- Query 2: First 5 trials of an example session ----
+example_session_id = df_sess["_session_id"].iloc[0]
+example_subject_id = df_sess["subject_id"].iloc[0]
+
+print(f"\n--- First 5 trials of session '{example_session_id}' ---")
+df_trials = pd.read_parquet(
+    f"{TRIAL_OUT}/subject_id={example_subject_id}/{example_session_id}.parquet"
+)
+TRIAL_DISPLAY_COLS = [
+    c for c in [
+        "session_id", "start_time", "stop_time",
+        "animal_response", "earned_reward",
+        "rewarded_historyL", "rewarded_historyR",
+        "reward_probabilityL", "reward_probabilityR",
+        "nwb_data_source",
+    ]
+    if c in df_trials.columns
+]
+print(f"  Total trials : {len(df_trials)}")
+print(df_trials[TRIAL_DISPLAY_COLS].head(5).to_string(index=False))
+
+# ---- Query 3: First 10 events of the same session ----
+print(f"\n--- First 10 events of session '{example_session_id}' ---")
+df_events = pd.read_parquet(
+    f"{EVENT_OUT}/subject_id={example_subject_id}/{example_session_id}.parquet"
+)
+print(f"  Total events : {len(df_events)}")
+print(f"  Event types  : {sorted(df_events['event'].unique().tolist())}")
+print(
+    df_events[["session_id", "timestamps", "event", "data", "nwb_data_source"]]
+    .head(10)
+    .to_string(index=False)
+)
