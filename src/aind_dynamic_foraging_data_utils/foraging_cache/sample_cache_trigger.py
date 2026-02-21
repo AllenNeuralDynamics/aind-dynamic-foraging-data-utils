@@ -232,77 +232,60 @@ print(f"    Event parquet files          : {len(event_files)}  ->  {EVENT_OUT}")
 print("=" * 60)
 
 # ---------------------------------------------------------------------------
-# 9.  Example queries
+# 9.  Example queries (DuckDB)
 # ---------------------------------------------------------------------------
-import pyarrow as pa
-import pyarrow.dataset as ds
-
-# The trial/event tables are Hive-partitioned by subject_id.
-# We tell PyArrow that subject_id is a string (not int) so the partition
-# directory name matches the in-file column type.
-_HIVE_PART = ds.partitioning(
-    schema=pa.schema([("subject_id", pa.string())]), flavor="hive"
-)
-
-def _open_table(prefix):
-    """Open a local Hive-partitioned parquet table as a PyArrow dataset."""
-    return ds.dataset(prefix, format="parquet", partitioning=_HIVE_PART)
+import duckdb
 
 print("\n" + "=" * 60)
 print("EXAMPLE QUERIES")
 print("=" * 60)
 
-# ---- Load session table once (flat parquet, no partitioning) ----
-df_sess = pd.read_parquet(SESSION_OUT)
-
 # ---- Query 1: Session-level query on the session table ----
 # Example: high-performing Uncoupled sessions (foraging_eff > 0.8)
 print("\n--- Session query: Uncoupled tasks with foraging_eff > 0.8 ---")
-selected = df_sess.query("task.str.contains('Uncoupled') and foraging_eff > 0.8")
-print(
-    selected[["_session_id", "subject_id", "session_date",
-              "finished_trials", "foraging_eff", "task"]]
-    .to_string(index=False)
-)
+selected = duckdb.sql(f"""
+    SELECT _session_id, subject_id, session_date, finished_trials, foraging_eff, task
+    FROM read_parquet('{SESSION_OUT}')
+    WHERE task LIKE '%Uncoupled%'
+      AND foraging_eff > 0.8
+    ORDER BY session_date, subject_id
+""").df()
+print(selected.to_string(index=False))
 
-# ---- Query 2: Load trial history for all selected sessions ----
-# Push the subject_id filter down to the partition level, then filter
-# to the exact session IDs in memory.
+# ---- Query 2: Trial history — session filter drives JOIN, session keys merged in ----
 print(f"\n--- Trial history for {len(selected)} selected sessions ---")
-selected_subjects  = selected["subject_id"].unique().tolist()
-selected_session_ids = selected["_session_id"].tolist()
-
-df_trials_all = (
-    _open_table(TRIAL_OUT)
-    .to_table(filter=ds.field("subject_id").isin(selected_subjects))
-    .to_pandas()
-    .query("session_id in @selected_session_ids")
-    .reset_index(drop=True)
-)
-TRIAL_DISPLAY_COLS = [
-    c for c in [
-        "session_id", "animal_response", "earned_reward",
-        "rewarded_historyL", "rewarded_historyR",
-        "reward_probabilityL", "reward_probabilityR",
-    ]
-    if c in df_trials_all.columns
-]
+df_trials_all = duckdb.sql(f"""
+    WITH sel AS (
+        SELECT _session_id, subject_id, session_date, task, foraging_eff
+        FROM read_parquet('{SESSION_OUT}')
+        WHERE task LIKE '%Uncoupled%' AND foraging_eff > 0.8
+    )
+    SELECT s.subject_id, s.session_date, s.task, s.foraging_eff,
+           t.session_id, t.animal_response, t.earned_reward,
+           t.reward_probabilityL, t.reward_probabilityR,
+           t.rewarded_historyL, t.rewarded_historyR
+    FROM read_parquet('{TRIAL_OUT}/**/*.parquet', hive_partitioning=true, union_by_name=true) t
+    JOIN sel s ON t.session_id = s._session_id
+    WHERE CAST(t.subject_id AS VARCHAR) IN (SELECT subject_id FROM sel)
+    ORDER BY s.subject_id, s.session_date
+""").df()
 print(f"  Total trials across {len(selected)} sessions : {len(df_trials_all)}")
-print(df_trials_all[TRIAL_DISPLAY_COLS].head(10).to_string(index=False))
+print(df_trials_all.head(10).to_string(index=False))
 
-# ---- Query 3: Load event history for all selected sessions ----
+# ---- Query 3: Event history — same pattern ----
 print(f"\n--- Event history for {len(selected)} selected sessions ---")
-df_events_all = (
-    _open_table(EVENT_OUT)
-    .to_table(filter=ds.field("subject_id").isin(selected_subjects))
-    .to_pandas()
-    .query("session_id in @selected_session_ids")
-    .reset_index(drop=True)
-)
+df_events_all = duckdb.sql(f"""
+    WITH sel AS (
+        SELECT _session_id, subject_id, session_date, task, foraging_eff
+        FROM read_parquet('{SESSION_OUT}')
+        WHERE task LIKE '%Uncoupled%' AND foraging_eff > 0.8
+    )
+    SELECT s.subject_id, s.session_date, e.session_id, e.timestamps, e.event, e.data
+    FROM read_parquet('{EVENT_OUT}/**/*.parquet', hive_partitioning=true, union_by_name=true) e
+    JOIN sel s ON e.session_id = s._session_id
+    WHERE CAST(e.subject_id AS VARCHAR) IN (SELECT subject_id FROM sel)
+    ORDER BY s.subject_id, s.session_date, e.timestamps
+""").df()
 print(f"  Total events across {len(selected)} sessions : {len(df_events_all)}")
 print(f"  Event types : {sorted(df_events_all['event'].unique().tolist())}")
-print(
-    df_events_all[["session_id", "timestamps", "event", "data"]]
-    .head(10)
-    .to_string(index=False)
-)
+print(df_events_all.head(10).to_string(index=False))
