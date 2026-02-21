@@ -1,5 +1,9 @@
 """
-Build parquet tables from 1000 randomly sampled sessions across all dates.
+Build parquet tables from N randomly sampled sessions across all dates.
+
+Strategy: build the Han session table *without* CO assets first (fast),
+filter to sessions that have a local NWB, sample, then enrich only the
+sampled rows with CO asset metadata from docDB.
 
 Sessions are drawn from all available sources:
   - CO assets  (docDB S3 URIs, highest priority)
@@ -37,7 +41,7 @@ TRIAL_OUT    = f"{SCRATCH}/trial_table"
 EVENT_OUT    = f"{SCRATCH}/event_table"
 META_OUT     = f"{SCRATCH}/build_metadata.json"
 
-N_SAMPLE     = 1000
+N_SAMPLE     = 100
 RANDOM_SEED  = 42
 
 os.makedirs(SCRATCH, exist_ok=True)
@@ -55,47 +59,42 @@ nwb_index = parquet_builder.build_nwb_file_index(
 print(f"  Total NWB files indexed: {len(nwb_index)}")
 
 # ---------------------------------------------------------------------------
-# 2.  Build full session table (Han + CO assets from docDB + Bowen flags)
+# 2.  Build session table WITHOUT CO assets (fast — Han table only)
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
-print("Step 2: Building session table (Han + CO assets from docDB)")
+print("Step 2: Building session table (Han only, no CO assets)")
 print("=" * 60)
 
 df_all = parquet_builder.build_session_table(
     output_path=SESSION_OUT.replace("_sample", "_full"),
     bowen_csv_path=parquet_builder.BOWEN_INCOMPLETE_CSV,
-    include_co_assets=True,
+    include_co_assets=False,
     verbose=True,
     incremental=False,
 )
 
 print(f"  Total sessions: {len(df_all)}")
 print(f"  Date range    : {df_all['session_date'].min()} -> {df_all['session_date'].max()}")
-print(f"  With CO asset : {df_all['co_s3_nwb_uri'].notna().sum()}")
 
 # ---------------------------------------------------------------------------
-# 3.  Keep only sessions that are processable
-#     (have a CO asset S3 URI  OR  have a local NWB file)
-#     Skip bad Bowen sessions regardless.
+# 3.  Filter to sessions that have a local NWB file
+#     (CO assets will be looked up later, only for the sample)
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
-print("Step 3: Filtering to processable sessions")
+print("Step 3: Filtering to sessions with local NWB files")
 print("=" * 60)
 
 def _has_local_nwb(row):
     suffix = int(row["nwb_suffix"]) if pd.notna(row["nwb_suffix"]) else -1
     return (str(row["subject_id"]), str(row["session_date"]), suffix) in nwb_index
 
-has_co    = df_all["co_s3_nwb_uri"].notna() & (df_all["co_s3_nwb_uri"] != "")
 has_local = df_all.apply(_has_local_nwb, axis=1)
 not_bad   = ~df_all["is_bad_bowen_session"]
 
-df_avail = df_all[not_bad & (has_co | has_local)].copy()
+df_avail = df_all[not_bad & has_local].copy()
 
 print(f"  Bad Bowen sessions excluded : {(~not_bad).sum()}")
-print(f"  Sessions with CO asset only : {(has_co & ~has_local & not_bad).sum()}")
-print(f"  Sessions with local only    : {(~has_co & has_local & not_bad).sum()}")
-print(f"  Sessions with both          : {(has_co & has_local & not_bad).sum()}")
+print(f"  Sessions with local NWB     : {has_local.sum()}")
 print(f"  Total processable           : {len(df_avail)}")
 
 # ---------------------------------------------------------------------------
@@ -132,23 +131,44 @@ for date, quota in quotas.items():
 df_sample = pd.concat(sampled_frames, ignore_index=True)
 print(f"  Sample size : {len(df_sample)} sessions across {df_sample['session_date'].nunique()} dates")
 print(f"  Date range  : {df_sample['session_date'].min()} -> {df_sample['session_date'].max()}")
-print(f"  CO asset    : {df_sample['co_s3_nwb_uri'].notna().sum()}")
-print(f"  Local only  : {df_sample['co_s3_nwb_uri'].isna().sum()}")
 
 # ---------------------------------------------------------------------------
-# 5.  Write sample session table
+# 5.  Enrich only the sampled rows with CO asset metadata from docDB
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
-print(f"Step 5: Writing sample session table -> {SESSION_OUT}")
+print(f"Step 5: Enriching {len(df_sample)} sampled sessions with CO assets")
+print("=" * 60)
+
+sample_subjects = sorted(df_sample["subject_id"].unique().tolist())
+print(f"  Unique subjects in sample: {len(sample_subjects)}")
+
+df_sample = parquet_builder._enrich_with_co_assets(
+    df_sample, sample_subjects, verbose=True,
+)
+
+# Refresh nwb_data_source now that CO assets are populated
+df_sample["nwb_data_source"] = df_sample.apply(
+    parquet_builder._assign_nwb_data_source, axis=1
+)
+
+has_co = df_sample["co_s3_nwb_uri"].notna() & (df_sample["co_s3_nwb_uri"] != "")
+print(f"  With CO asset : {has_co.sum()}")
+print(f"  Local only    : {(~has_co).sum()}")
+
+# ---------------------------------------------------------------------------
+# 6.  Write sample session table
+# ---------------------------------------------------------------------------
+print("\n" + "=" * 60)
+print(f"Step 6: Writing sample session table -> {SESSION_OUT}")
 print("=" * 60)
 parquet_builder._write_dataframe_as_parquet(df_sample, SESSION_OUT)
 print(f"  Written: {len(df_sample)} rows")
 
 # ---------------------------------------------------------------------------
-# 6.  Build trial + event tables
+# 7.  Build trial + event tables
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
-print("Step 6: Building trial and event parquet tables")
+print("Step 7: Building trial and event parquet tables")
 print("=" * 60)
 
 summary = parquet_builder.build_trial_and_event_tables(
@@ -163,7 +183,7 @@ summary = parquet_builder.build_trial_and_event_tables(
 )
 
 # ---------------------------------------------------------------------------
-# 7.  Final summary
+# 8.  Final summary
 # ---------------------------------------------------------------------------
 trial_files = glob.glob(f"{TRIAL_OUT}/**/*.parquet", recursive=True)
 event_files = glob.glob(f"{EVENT_OUT}/**/*.parquet", recursive=True)
@@ -175,18 +195,15 @@ print("=" * 60)
 print(f"\n  [Session pool]")
 print(f"    Han table total              : {len(df_all)}")
 print(f"    Bad Bowen sessions excluded  : {(~not_bad).sum()}")
-print(f"    Processable (CO or local)    : {len(df_avail)}")
-print(f"      -- CO asset (any)          : {(has_co & not_bad).sum()}")
-print(f"      -- Local NWB (any)         : {(has_local & not_bad).sum()}")
-print(f"      -- Both CO + local         : {(has_co & has_local & not_bad).sum()}")
+print(f"    Processable (local NWB)      : {len(df_avail)}")
 print(f"    Date range                   : {df_avail['session_date'].min()} -> {df_avail['session_date'].max()}")
 print(f"    Unique dates in pool         : {df_avail['session_date'].nunique()}")
 
 print(f"\n  [Sample  (n={len(df_sample)})]")
 print(f"    Unique dates covered         : {df_sample['session_date'].nunique()}")
 print(f"    Date range                   : {df_sample['session_date'].min()} -> {df_sample['session_date'].max()}")
-print(f"    With CO asset                : {df_sample['co_s3_nwb_uri'].notna().sum()}")
-print(f"    Local only                   : {df_sample['co_s3_nwb_uri'].isna().sum()}")
+print(f"    With CO asset                : {has_co.sum()}")
+print(f"    Local only                   : {(~has_co).sum()}")
 
 print(f"\n  [Build results]")
 print(f"    Processed (ok)               : {summary['n_processed']}")
