@@ -167,6 +167,140 @@ def _load_bowen_incomplete_sessions(csv_path=BOWEN_INCOMPLETE_CSV):
 
 
 # ---------------------------------------------------------------------------
+# Session table helpers (module-level for reuse and pickling)
+# ---------------------------------------------------------------------------
+
+
+def _parse_co_session_name(sname):
+    """Parse a CO session_name like 'behavior_123456_2024-01-01_13-06-12'
+    into (subject_id, session_date, nwb_suffix_int), or (None, None, None)."""
+    m = re.match(
+        r"behavior_(\d+)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})$",
+        str(sname),
+    )
+    if m:
+        subj, date, time_str = m.groups()
+        return subj, date, int(time_str.replace("-", ""))
+    return None, None, None
+
+
+def _assign_nwb_data_source(row):
+    """Determine the preferred NWB data source for a session row."""
+    if pd.notna(row.get("co_asset_id")) and row["co_asset_id"] != "":
+        return "co_asset"
+    if "bpod" in str(row.get("data_source", "")).lower():
+        return "bpod_s3"
+    return "bonsai_s3"
+
+
+def _compute_session_id(df):
+    """Return a Series of '{subject_id}_{session_date}_{nwb_suffix}' strings."""
+    return (
+        df["subject_id"].astype(str)
+        + "_"
+        + df["session_date"].astype(str)
+        + "_"
+        + df["nwb_suffix"].astype(str)
+    )
+
+
+def _read_existing_session_table(path):
+    """Read a session table parquet from local or S3 path.
+
+    Returns pd.DataFrame or None if file doesn't exist.
+    """
+    try:
+        if path.startswith("s3://"):
+            fs = s3fs.S3FileSystem(anon=False)
+            s3_path = path[len("s3://"):]
+            if not fs.exists(s3_path):
+                return None
+            return pd.read_parquet(path, filesystem=fs)
+        else:
+            if not os.path.exists(path):
+                return None
+            return pd.read_parquet(path)
+    except Exception:
+        return None
+
+
+def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):
+    """Query docDB for CO assets for the given subject_ids and merge onto df_sessions.
+
+    Populates 'co_asset_id' and 'co_s3_nwb_uri' columns via targeted
+    get_assets(subjects=subject_ids) + add_s3_location().
+
+    Parameters
+    ----------
+    df_sessions : pd.DataFrame
+        Must have subject_id, session_date, nwb_suffix columns.
+    subject_ids : list[str]
+        Subject IDs to query. If empty, skips the query entirely.
+    verbose : bool
+
+    Returns
+    -------
+    pd.DataFrame
+        df_sessions with co_asset_id and co_s3_nwb_uri updated in place.
+    """
+    if not subject_ids:
+        if verbose:
+            print("  No subjects to query for CO assets — skipping.")
+        return df_sessions
+
+    from aind_dynamic_foraging_data_utils.code_ocean_utils import add_s3_location, get_assets
+
+    if verbose:
+        print(f"  Querying docDB for CO assets (subjects={len(subject_ids)})...")
+
+    df_co = get_assets(subjects=subject_ids, processed=True, modality=["behavior"])
+
+    if df_co is None or len(df_co) == 0:
+        if verbose:
+            print("  No CO assets found for these subjects.")
+        return df_sessions
+
+    parsed = df_co["session_name"].apply(_parse_co_session_name)
+    df_co = df_co.copy()
+    df_co["_subject_id"] = parsed.apply(lambda x: x[0])
+    df_co["_session_date"] = parsed.apply(lambda x: x[1])
+    df_co["_nwb_suffix"] = parsed.apply(lambda x: x[2]).astype("Int64")
+    df_co = df_co.dropna(subset=["_subject_id"])
+
+    if verbose:
+        print(f"  Found {len(df_co)} CO assets. Fetching S3 locations...")
+    df_co = add_s3_location(df_co)
+
+    co_lookup = {}
+    for _, row in df_co.iterrows():
+        key = (row["_subject_id"], row["_session_date"], row["_nwb_suffix"])
+        co_lookup[key] = (
+            row.get("code_ocean_asset_id", pd.NA),
+            row.get("s3_nwb_location", pd.NA),
+        )
+
+    def _lookup(r, field):
+        val = co_lookup.get(
+            (str(r["subject_id"]), str(r["session_date"]), r["nwb_suffix"]),
+            (pd.NA, pd.NA),
+        )
+        return val[0] if field == "id" else val[1]
+
+    df_sessions["co_asset_id"] = df_sessions.apply(
+        lambda r: _lookup(r, "id"), axis=1
+    )
+    df_sessions["co_s3_nwb_uri"] = df_sessions.apply(
+        lambda r: _lookup(r, "uri"), axis=1
+    )
+
+    n_matched = df_sessions["co_asset_id"].notna().sum()
+    if verbose:
+        print(f"  Matched {n_matched}/{len(df_sessions)} sessions with CO assets")
+
+    return df_sessions
+
+
+# ---------------------------------------------------------------------------
 # Session table builder
 # ---------------------------------------------------------------------------
 
@@ -176,6 +310,8 @@ def build_session_table(
     bowen_csv_path=BOWEN_INCOMPLETE_CSV,
     include_co_assets=True,
     verbose=True,
+    incremental=True,
+    recheck_missing_co=True,
 ):
     """
     Build the session-level parquet table by combining:
@@ -183,11 +319,33 @@ def build_session_table(
       2. CO asset IDs from docDB     (for sessions with AIND-processed CO assets)
       3. Bowen incomplete session flags
 
+    When ``incremental=True`` (default), loads the existing session table from
+    ``output_path`` and only queries docDB for **new** sessions (those whose
+    ``_session_id`` is not in the existing table). This avoids re-running ~13k
+    S3 globs on every build.
+
     The resulting table has one row per session with all Han metadata plus:
+      - _session_id         : unique key "{subject_id}_{session_date}_{nwb_suffix}"
       - co_asset_id       : CO data asset ID (str or None)
       - co_s3_nwb_uri     : S3 URI of the NWB inside the CO asset (str or None)
       - nwb_data_source   : "co_asset" | "bonsai_s3" | "bpod_s3"
       - is_bad_bowen_session : bool
+
+    Parameters
+    ----------
+    output_path : str
+        Where to write the parquet file (local path or S3 URI).
+    bowen_csv_path : str
+        Path to Bowen incomplete sessions CSV.
+    include_co_assets : bool
+        If False, skip all CO asset lookups.
+    verbose : bool
+    incremental : bool
+        If True (default), load existing table and only process new sessions.
+        Falls back to full build if no existing table is found.
+    recheck_missing_co : bool
+        If True (default) and incremental, re-query subjects whose sessions
+        previously had no CO asset, to pick up newly available assets.
 
     Returns:
         pd.DataFrame: The full session table (also written to output_path).
@@ -198,103 +356,103 @@ def build_session_table(
 
     from aind_analysis_arch_result_access.han_pipeline import get_session_table
 
-    df_sessions = get_session_table(if_load_bpod=True)
+    df_han = get_session_table(if_load_bpod=True)
 
     # Normalise nwb_suffix to nullable integer
-    df_sessions["nwb_suffix"] = df_sessions["nwb_suffix"].astype("Int64")
+    df_han["nwb_suffix"] = df_han["nwb_suffix"].astype("Int64")
 
     # Ensure subject_id is string
-    df_sessions["subject_id"] = df_sessions["subject_id"].astype(str)
+    df_han["subject_id"] = df_han["subject_id"].astype(str)
 
     # Normalise session_date to plain "YYYY-MM-DD" string
-    df_sessions["session_date"] = pd.to_datetime(df_sessions["session_date"]).dt.strftime(
+    df_han["session_date"] = pd.to_datetime(df_han["session_date"]).dt.strftime(
         "%Y-%m-%d"
     )
 
+    # Compute stable session ID
+    df_han["_session_id"] = _compute_session_id(df_han)
+
     if verbose:
-        print(f"  Loaded {len(df_sessions)} sessions")
+        print(f"  Loaded {len(df_han)} sessions from Han table")
 
-    # ---- 2. Initialise CO asset columns ----
-    df_sessions["co_asset_id"] = pd.NA
-    df_sessions["co_s3_nwb_uri"] = pd.NA
+    # ---- 2. Try loading existing session table (incremental mode) ----
+    df_existing = None
+    if incremental:
+        df_existing = _read_existing_session_table(output_path)
+        if df_existing is not None:
+            if verbose:
+                print(f"  Loaded existing session table: {len(df_existing)} rows from {output_path}")
+        else:
+            if verbose:
+                print("  No existing session table found — falling back to full build.")
 
-    if include_co_assets:
+    # ---- 3. Determine new vs existing sessions ----
+    if df_existing is not None and "_session_id" in df_existing.columns:
+        existing_ids = set(df_existing["_session_id"])
+        new_mask = ~df_han["_session_id"].isin(existing_ids)
+        df_new = df_han[new_mask].copy()
         if verbose:
-            print("Querying docDB for CO asset metadata...")
+            print(f"  New sessions to process: {len(df_new)}")
+    else:
+        # Full build: treat all Han sessions as new
+        df_new = df_han.copy()
+        df_existing = None
+        if verbose:
+            print(f"  Full build: processing all {len(df_new)} sessions")
+
+    # ---- 4. Initialise CO asset columns on new rows ----
+    df_new["co_asset_id"] = pd.NA
+    df_new["co_s3_nwb_uri"] = pd.NA
+
+    if include_co_assets and len(df_new) > 0:
         try:
-            from aind_dynamic_foraging_data_utils.code_ocean_utils import add_s3_location, get_assets
-
-            df_co = get_assets(processed=True, modality=["behavior"])
-
-            if df_co is not None and len(df_co) > 0:
-                def _parse_co_session_name(sname):
-                    m = re.match(
-                        r"behavior_(\d+)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})$",
-                        str(sname),
-                    )
-                    if m:
-                        subj, date, time_str = m.groups()
-                        return subj, date, int(time_str.replace("-", ""))
-                    return None, None, None
-
-                parsed = df_co["session_name"].apply(_parse_co_session_name)
-                df_co = df_co.copy()
-                df_co["_subject_id"] = parsed.apply(lambda x: x[0])
-                df_co["_session_date"] = parsed.apply(lambda x: x[1])
-                df_co["_nwb_suffix"] = parsed.apply(lambda x: x[2]).astype("Int64")
-                df_co = df_co.dropna(subset=["_subject_id"])
-
-                if verbose:
-                    print(f"  Found {len(df_co)} CO assets. Fetching S3 locations...")
-                df_co = add_s3_location(df_co)
-
-                co_lookup = {}
-                for _, row in df_co.iterrows():
-                    key = (row["_subject_id"], row["_session_date"], row["_nwb_suffix"])
-                    co_lookup[key] = (
-                        row.get("code_ocean_asset_id", pd.NA),
-                        row.get("s3_nwb_location", pd.NA),
-                    )
-
-                def _lookup(r, field):
-                    val = co_lookup.get(
-                        (str(r["subject_id"]), str(r["session_date"]), r["nwb_suffix"]),
-                        (pd.NA, pd.NA),
-                    )
-                    return val[0] if field == "id" else val[1]
-
-                df_sessions["co_asset_id"] = df_sessions.apply(
-                    lambda r: _lookup(r, "id"), axis=1
-                )
-                df_sessions["co_s3_nwb_uri"] = df_sessions.apply(
-                    lambda r: _lookup(r, "uri"), axis=1
-                )
-
-                n_matched = df_sessions["co_asset_id"].notna().sum()
-                if verbose:
-                    print(f"  Matched {n_matched}/{len(df_sessions)} sessions with CO assets")
-
+            new_subjects = sorted(df_new["subject_id"].unique().tolist())
+            df_new = _enrich_with_co_assets(df_new, new_subjects, verbose=verbose)
         except Exception as e:
-            warnings.warn(f"Failed to load CO assets from docDB: {e}")
+            warnings.warn(f"Failed to load CO assets from docDB for new sessions: {e}")
 
-    # ---- 3. Flag Bowen incomplete sessions ----
+    # ---- 5. Recheck existing sessions with missing CO assets ----
+    if (
+        include_co_assets
+        and recheck_missing_co
+        and df_existing is not None
+        and len(df_existing) > 0
+    ):
+        missing_co_mask = df_existing["co_asset_id"].isna()
+        n_missing = missing_co_mask.sum()
+        if n_missing > 0:
+            if verbose:
+                print(f"  Rechecking {n_missing} existing sessions with missing CO assets...")
+            recheck_subjects = sorted(
+                df_existing.loc[missing_co_mask, "subject_id"].unique().tolist()
+            )
+            try:
+                df_existing = _enrich_with_co_assets(
+                    df_existing, recheck_subjects, verbose=verbose
+                )
+            except Exception as e:
+                warnings.warn(f"Failed to recheck CO assets: {e}")
+        elif verbose:
+            print("  All existing sessions already have CO assets — no recheck needed.")
+
+    # ---- 6. Combine existing + new ----
+    if df_existing is not None and len(df_existing) > 0:
+        # Use Han columns for new rows, preserve existing columns for old rows
+        df_sessions = pd.concat([df_existing, df_new], ignore_index=True)
+    else:
+        df_sessions = df_new
+
+    # ---- 7. Flag Bowen incomplete sessions (refresh on all rows) ----
     bowen_bad_co_ids = _load_bowen_incomplete_sessions(bowen_csv_path)
     df_sessions["is_bad_bowen_session"] = df_sessions["co_asset_id"].isin(bowen_bad_co_ids)
 
     if verbose:
         print(f"  Flagged {df_sessions['is_bad_bowen_session'].sum()} Bowen incomplete sessions")
 
-    # ---- 4. Assign preferred NWB data source per session ----
-    def _assign_nwb_data_source(row):
-        if pd.notna(row.get("co_asset_id")) and row["co_asset_id"] != "":
-            return "co_asset"
-        if "bpod" in str(row.get("data_source", "")).lower():
-            return "bpod_s3"
-        return "bonsai_s3"
-
+    # ---- 8. Assign preferred NWB data source per session (refresh on all rows) ----
     df_sessions["nwb_data_source"] = df_sessions.apply(_assign_nwb_data_source, axis=1)
 
-    # ---- 5. Write to parquet ----
+    # ---- 9. Write to parquet ----
     if verbose:
         print(f"Writing session table ({len(df_sessions)} rows) -> {output_path} ...")
 
@@ -536,13 +694,7 @@ def build_trial_and_event_tables(
     # ---- 2. Build list of sessions to process ----
     df = session_df.copy()
 
-    df["_session_id"] = (
-        df["subject_id"].astype(str)
-        + "_"
-        + df["session_date"].astype(str)
-        + "_"
-        + df["nwb_suffix"].astype(str)
-    )
+    df["_session_id"] = _compute_session_id(df)
 
     if incremental and processed_sessions:
         df = df[~df["_session_id"].isin(processed_sessions)]
