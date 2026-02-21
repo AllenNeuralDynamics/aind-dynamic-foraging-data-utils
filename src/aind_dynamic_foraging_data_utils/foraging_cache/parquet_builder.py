@@ -241,8 +241,12 @@ def _add_s3_location_parallel(df, n_workers=100, verbose=True):
 
     locations = df["location"].tolist()
 
+    n_actual = min(n_workers, len(locations))
+    if verbose:
+        print(f"    Using {n_actual} threads for {len(locations)} S3 globs")
+
     results = [""] * len(locations)
-    with ThreadPoolExecutor(max_workers=n_workers) as pool:
+    with ThreadPoolExecutor(max_workers=n_actual) as pool:
         future_to_idx = {pool.submit(_glob_one, loc): i for i, loc in enumerate(locations)}
         for n_done, future in enumerate(as_completed(future_to_idx), 1):
             idx = future_to_idx[future]
@@ -288,9 +292,13 @@ def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):
     # massive regex and to overlap network latency.
     CHUNK_SIZE = 50
     chunks = [subject_ids[i:i + CHUNK_SIZE] for i in range(0, len(subject_ids), CHUNK_SIZE)]
+    n_threads = min(len(chunks), 20)
+
+    if verbose:
+        print(f"    Using {n_threads} threads for {len(chunks)} docDB query chunks ({CHUNK_SIZE} subjects/chunk)")
 
     co_frames = []
-    with ThreadPoolExecutor(max_workers=min(len(chunks), 20)) as pool:
+    with ThreadPoolExecutor(max_workers=n_threads) as pool:
         futures = {
             pool.submit(get_assets, subjects=chunk, processed=True, modality=["behavior"]): i
             for i, chunk in enumerate(chunks)
