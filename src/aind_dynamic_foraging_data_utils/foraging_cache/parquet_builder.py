@@ -290,7 +290,7 @@ def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):
 
     # Chunk subjects and query docDB in parallel threads to avoid a single
     # massive regex and to overlap network latency.
-    CHUNK_SIZE = 50
+    CHUNK_SIZE = 10
     chunks = [subject_ids[i:i + CHUNK_SIZE] for i in range(0, len(subject_ids), CHUNK_SIZE)]
     n_threads = min(len(chunks), 20)
 
