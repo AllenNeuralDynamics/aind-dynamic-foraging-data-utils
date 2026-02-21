@@ -284,7 +284,25 @@ def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):
     if verbose:
         print(f"  Querying docDB for CO assets (subjects={len(subject_ids)})...")
 
-    df_co = get_assets(subjects=subject_ids, processed=True, modality=["behavior"])
+    # Chunk subjects and query docDB in parallel threads to avoid a single
+    # massive regex and to overlap network latency.
+    CHUNK_SIZE = 50
+    chunks = [subject_ids[i:i + CHUNK_SIZE] for i in range(0, len(subject_ids), CHUNK_SIZE)]
+
+    co_frames = []
+    with ThreadPoolExecutor(max_workers=min(len(chunks), 20)) as pool:
+        futures = {
+            pool.submit(get_assets, subjects=chunk, processed=True, modality=["behavior"]): i
+            for i, chunk in enumerate(chunks)
+        }
+        for n_done, future in enumerate(as_completed(futures), 1):
+            result = future.result()
+            if result is not None and len(result) > 0:
+                co_frames.append(result)
+            if verbose and (n_done <= 3 or n_done % 10 == 0 or n_done == len(chunks)):
+                print(f"    docDB query: {n_done}/{len(chunks)} chunks done")
+
+    df_co = pd.concat(co_frames, ignore_index=True) if co_frames else None
 
     if df_co is None or len(df_co) == 0:
         if verbose:
