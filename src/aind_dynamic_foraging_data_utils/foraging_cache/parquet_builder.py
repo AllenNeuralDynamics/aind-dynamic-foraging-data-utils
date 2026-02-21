@@ -43,7 +43,7 @@ import logging
 import os
 import re
 import warnings
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
 import pandas as pd
 import pyarrow as pa
@@ -224,6 +224,37 @@ def _read_existing_session_table(path):
         return None
 
 
+def _add_s3_location_parallel(df, n_workers=100, verbose=True):
+    """Parallel replacement for code_ocean_utils.add_s3_location().
+
+    Each row's ``location`` column is globbed on S3 for a ``.nwb`` file.
+    Uses a ThreadPoolExecutor since the work is I/O-bound (S3 API calls).
+    """
+    fs = s3fs.S3FileSystem()
+
+    def _glob_one(location):
+        try:
+            hits = fs.glob(f"{location}/**/*.nwb")
+            return f"s3://{hits[0]}" if hits else ""
+        except Exception:
+            return ""
+
+    locations = df["location"].tolist()
+
+    results = [""] * len(locations)
+    with ThreadPoolExecutor(max_workers=n_workers) as pool:
+        future_to_idx = {pool.submit(_glob_one, loc): i for i, loc in enumerate(locations)}
+        for n_done, future in enumerate(as_completed(future_to_idx), 1):
+            idx = future_to_idx[future]
+            results[idx] = future.result()
+            if verbose and (n_done <= 3 or n_done % 50 == 0 or n_done == len(locations)):
+                print(f"    S3 glob: {n_done}/{len(locations)}")
+
+    df = df.copy()
+    df["s3_nwb_location"] = results
+    return df
+
+
 def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):
     """Query docDB for CO assets for the given subject_ids and merge onto df_sessions.
 
@@ -248,7 +279,7 @@ def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):
             print("  No subjects to query for CO assets — skipping.")
         return df_sessions
 
-    from aind_dynamic_foraging_data_utils.code_ocean_utils import add_s3_location, get_assets
+    from aind_dynamic_foraging_data_utils.code_ocean_utils import get_assets
 
     if verbose:
         print(f"  Querying docDB for CO assets (subjects={len(subject_ids)})...")
@@ -268,8 +299,8 @@ def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):
     df_co = df_co.dropna(subset=["_subject_id"])
 
     if verbose:
-        print(f"  Found {len(df_co)} CO assets. Fetching S3 locations...")
-    df_co = add_s3_location(df_co)
+        print(f"  Found {len(df_co)} CO assets. Fetching S3 locations (parallel)...")
+    df_co = _add_s3_location_parallel(df_co, verbose=verbose)
 
     co_lookup = {}
     for _, row in df_co.iterrows():
