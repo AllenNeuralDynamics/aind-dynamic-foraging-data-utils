@@ -13,11 +13,15 @@ import os
 import re
 import warnings
 from datetime import date
+from typing import Union
 
 import numpy as np
 import pandas as pd
 from hdmf_zarr import NWBZarrIO
 from pynwb import NWBHDF5IO
+import pynwb
+
+from aind_nwb_utils import NWBCombineIO
 
 # If we adjust time_in_session, adjust it to this
 SESSION_ALIGNMENT = "goCue_start_time"
@@ -50,6 +54,23 @@ def load_nwb_from_filename(filename):
         # Assuming its already an NWB
         return filename
 
+def load_nwb_from_files(main_nwb=str, sub_nwbs=list) -> tuple[pynwb.NWBFile, Union[NWBHDF5IO, NWBZarrIO]]:
+    """Merges multiple NWB files and returns a single NWB object
+
+    Parameters
+    ----------
+    main_nwb: str
+        Path to main NWB file (e.g. fiber)
+    sub_nwbs: list
+        Path to subsequent NWB files that need to be merged
+    
+    Returns
+    -------
+    tuple[pynwb.NWBFile, Union[NWBHDF5IO, NWBZarrIO]]
+        Combined NWB object
+    """
+    return NWBCombineIO(main_nwb, sub_nwbs).read()
+    
 
 def create_single_df_session_inner(nwb):
     """
