@@ -694,6 +694,9 @@ def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     # Iterate over event types and build a dataframe of each
     events = []
     for e in event_types:
+        if e not in nwb_data:
+            warnings.warn('FIP data stream "{}" not in NWB file'.format(e))
+            continue
         # For each event, get timestamps, data, and label
         raw_stamps = nwb_data[e].timestamps[:]
         data = nwb_data[e].data[:]
