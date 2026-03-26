@@ -556,6 +556,16 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
 
         warnings.warn(text, UserWarning)
 
+    # Some sessions have CSminus and CSplus trials, when they exist there is a trial_type
+    # column that labels the trial type
+    if "trial_type" in df:
+        text = (
+            "This session contains multiple trial types. "
+            "This indicates this session was unusual, care "
+            "should be taken to evaluate how these trial types impact your analysis"
+        )
+        warnings.warn(text, UserWarning)
+
     return df
 
 
