@@ -389,7 +389,9 @@ def get_foraging_model_info(
     """
     print(f"Retrieving foraging model {model_name}")
     df_trials_fm = df_trials.copy()
-    df_trials_fm["choice_name"] = df_trials_fm["animal_response"].map({1: "right", 0: "left"})
+    df_trials_fm["choice_name"] = df_trials_fm["animal_response"].map(
+        {1: "right", 0: "left", 2: "ignore"}
+    )
 
     df_trials_fm["model_name"] = model_name
     df_trials_fm["L_prob"] = np.nan
