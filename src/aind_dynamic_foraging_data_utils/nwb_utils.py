@@ -36,7 +36,11 @@ def load_nwb_from_filename(filename):
     """
 
     if type(filename) is str:
-        if os.path.isdir(filename) or (filename.startswith("s3://") and filename.endswith(".nwb")):
+        if (
+            os.path.isdir(filename)
+            or (filename.startswith("s3://") and filename.endswith(".nwb"))
+            or (filename.startswith("s3://") and filename.endswith(".nwb.zarr"))
+        ):
             io = NWBZarrIO(filename, mode="r")
             nwb = io.read()
             return nwb
@@ -491,8 +495,10 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     rewarded_df = df.query("earned_reward")
     if not np.isnan(rewarded_df["reward_time_in_session"]).sum() == 0:
         if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
-            warnings.warn("Rewarded trials without reward time. \
-                This is likely due to manual rewards not being recorded in sessions from 2024")
+            warnings.warn(
+                "Rewarded trials without reward time. \
+                This is likely due to manual rewards not being recorded in sessions from 2024"
+            )
         else:
             raise AssertionError("Rewarded trials without reward time")
 
@@ -503,8 +509,10 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     earned_df = rewarded_df.query("not extra_reward")
     if not np.all(earned_df["choice_time_in_session"] <= earned_df["reward_time_in_session"]):
         if date.fromisoformat(session_date) <= manual_reward_date_cutoff:
-            warnings.warn("Reward before choice time. \
-                This is likely due to manual rewards not being recorded in sessions from 2024")
+            warnings.warn(
+                "Reward before choice time. \
+                This is likely due to manual rewards not being recorded in sessions from 2024"
+            )
         else:
             raise AssertionError("Reward before choice time")
 
@@ -546,6 +554,16 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
             "https://github.com/AllenNeuralDynamics/aind-dynamic-foraging-data-utils/issues/67"
         )
 
+        warnings.warn(text, UserWarning)
+
+    # Some sessions have CSminus and CSplus trials, when they exist there is a trial_type
+    # column that labels the trial type
+    if "trial_type" in df:
+        text = (
+            "This session contains multiple trial types. "
+            "This indicates this session was unusual, care "
+            "should be taken to evaluate how these trial types impact your analysis"
+        )
         warnings.warn(text, UserWarning)
 
     return df
@@ -686,6 +704,9 @@ def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     # Iterate over event types and build a dataframe of each
     events = []
     for e in event_types:
+        if e not in nwb_data:
+            warnings.warn('FIP data stream "{}" not in NWB file'.format(e))
+            continue
         # For each event, get timestamps, data, and label
         raw_stamps = nwb_data[e].timestamps[:]
         data = nwb_data[e].data[:]
