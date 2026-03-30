@@ -378,8 +378,7 @@ def get_foraging_model_info(
     get_foraging_model_info: retrieves fitted foraging_model information
     df_trials: dataframe for trials (1 row per trials) from nwb_utils.create df_trials.
                saved df_trials_fm will have L_prob, R_prob, Q_left, Q_right
-
-               (if choice kernel in model), L_kernel, R_kernel
+               (if choice kernel in model), L_kernel, R_kernel, and choice_name
     df_sess: dataframe for sessions (1 row per session) from nwb_utils.create_df_sessions
                saved df_sess_fm will have parameters fitted for each mouse.
     loc: location to save the updated df_trials, df_sess with suffix `_fm.csv`.
