@@ -384,8 +384,7 @@ def get_foraging_model_info(
     get_foraging_model_info: retrieves fitted foraging_model information
     df_trials: dataframe for trials (1 row per trials) from nwb_utils.create df_trials.
                saved df_trials_fm will have L_prob, R_prob, Q_left, Q_right
-
-               (if choice kernel in model), L_kernel, R_kernel
+               (if choice kernel in model), L_kernel, R_kernel, and choice_name
     df_sess: dataframe for sessions (1 row per session) from nwb_utils.create_df_sessions
                saved df_sess_fm will have parameters fitted for each mouse.
     loc: location to save the updated df_trials, df_sess with suffix `_fm.csv`.
@@ -395,8 +394,9 @@ def get_foraging_model_info(
     """
     print(f"Retrieving foraging model {model_name}")
     df_trials_fm = df_trials.copy()
-    df_trials_fm = df_trials_fm.rename(columns={"animal_response": "choice"})
-    df_trials_fm["choice_name"] = df_trials_fm["choice"].map({1: "right", 0: "left"})
+    df_trials_fm["choice_name"] = df_trials_fm["animal_response"].map(
+        {1: "right", 0: "left", 2: "ignore"}
+    )
 
     df_trials_fm["model_name"] = model_name
     df_trials_fm["L_prob"] = np.nan
@@ -445,7 +445,7 @@ def get_foraging_model_info(
 
         # pull the information
         mouse_choice_idx = df_trials_fm.index[
-            (df_trials_fm["ses_idx"] == sess_idx) & (df_trials_fm["choice"] < 2)
+            (df_trials_fm["ses_idx"] == sess_idx) & (df_trials_fm["animal_response"] < 2)
         ]
 
         # Add check on mouse_choice_idx and length of choice_prob

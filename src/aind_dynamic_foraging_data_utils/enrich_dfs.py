@@ -336,7 +336,7 @@ def enrich_df_trials_fm(df_trials_fm):
         df_ses = df_trials_fm[
             (df_trials_fm["ses_idx"] == ses_idx) & (df_trials_fm["model_name"] == model_name)
         ]  # noqa: E501
-        choices = df_ses.choice.map({0: "L", 1: "R", 2: "I"}).values
+        choices = df_ses.animal_response.map({0: "L", 1: "R", 2: "I"}).values
         chosen_values = np.nan * np.zeros(len(df_ses))
         unchosen_values = np.nan * np.zeros(len(df_ses))
         chosen_probabilities = np.nan * np.zeros(len(df_ses))
@@ -405,8 +405,8 @@ def enrich_df_trials_fm(df_trials_fm):
             df_ses.loc[:, "RPE_all"] = (
                 df_ses["earned_reward"].astype(float) + df_ses["extra_reward"].astype(float)
             ) - chosen_values
-            df_ses.loc[pd.isna(df_ses["choice"]), "RPE_earned"] = np.nan
-            df_ses.loc[pd.isna(df_ses["choice"]), "RPE_all"] = np.nan
+            df_ses.loc[pd.isna(df_ses["animal_response"]), "RPE_earned"] = np.nan
+            df_ses.loc[pd.isna(df_ses["animal_response"]), "RPE_all"] = np.nan
             # df_ses.loc[:,['licks_chosen']] = chosen_licks
         df_trials_fm_enriched = pd.concat([df_trials_fm_enriched, df_ses], axis=0)
     return df_trials_fm_enriched
