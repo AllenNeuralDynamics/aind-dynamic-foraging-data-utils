@@ -310,13 +310,18 @@ def create_single_df_session(nwb_filename):
     return df_session
 
 
-def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
+def create_df_trials(  # NOQA C901
+    nwb_filename, adjust_time=True, verbose=True, forced_sanity_check=True
+):
     """
     Process nwb and create df_trials for every single session
 
     ARGS:
     nwb_filename (str or NWB object), the session to extract the trials from
     adjust_time (bool) if true, adjust t0 to be the first gocue
+    verbose (bool) if true, print warnings about time adjustments
+    forced_sanity_check (bool) if true, failed sanity checks will raise errors; otherwise,
+        they will only issue warnings
 
     RETURNS:
     A pandas dataframe containing the columns of nwb.trials plus:
@@ -371,7 +376,9 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                 # Here we always align to goCue_start_time, not SESSION_ALIGNMENT
                 # since this aligns events relative to the trial go cue, not the start
                 # of the session
-                df[col + "_in_trial"] = df[col].values - df["goCue_start_time"].values
+                df[col + "_in_trial"] = pd.to_numeric(df[col], errors="coerce") - pd.to_numeric(
+                    df["goCue_start_time"], errors="coerce"
+                )
 
             # Clean up these column names that are not clear
             drop_cols.append(col)
@@ -500,11 +507,16 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                 This is likely due to manual rewards not being recorded in sessions from 2024"
             )
         else:
-            raise AssertionError("Rewarded trials without reward time")
+            if forced_sanity_check:
+                raise AssertionError("Rewarded trials without reward time")
+            else:
+                warnings.warn("Rewarded trials without reward time")
 
-    assert (
-        np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0
-    ), "Rewarded trials without choice time"
+    if not np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0:
+        if forced_sanity_check:
+            raise AssertionError("Rewarded trials without choice time")
+        else:
+            warnings.warn("Rewarded trials without choice time")
 
     earned_df = rewarded_df.query("not extra_reward")
     if not np.all(earned_df["choice_time_in_session"] <= earned_df["reward_time_in_session"]):
@@ -514,11 +526,16 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                 This is likely due to manual rewards not being recorded in sessions from 2024"
             )
         else:
-            raise AssertionError("Reward before choice time")
+            if forced_sanity_check:
+                raise AssertionError("Reward before choice time")
+            else:
+                warnings.warn("Reward before choice time")
 
-    assert np.all(
-        rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE
-    ), "Rewarded trial with negative choice_time_in_trial"
+    if not np.all(rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE):
+        if forced_sanity_check:
+            raise AssertionError("Rewarded trial with negative choice_time_in_trial")
+        else:
+            warnings.warn("Rewarded trial with negative choice_time_in_trial")
 
     check_rew_time = np.isnan(
         df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"]
@@ -531,7 +548,10 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                 UserWarning,
             )
         else:
-            raise AssertionError("Unrewarded trials with reward time")
+            if forced_sanity_check:
+                raise AssertionError("Unrewarded trials with reward time")
+            else:
+                warnings.warn("Unrewarded trials with reward time")
 
     # Drop columns
     drop_cols += key_from_acq
