@@ -371,7 +371,9 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                 # Here we always align to goCue_start_time, not SESSION_ALIGNMENT
                 # since this aligns events relative to the trial go cue, not the start
                 # of the session
-                df[col + "_in_trial"] = df[col].values - df["goCue_start_time"].values
+                df[col + "_in_trial"] = pd.to_numeric(df[col], errors="coerce") - pd.to_numeric(
+                    df["goCue_start_time"], errors="coerce"
+                )
 
             # Clean up these column names that are not clear
             drop_cols.append(col)
