@@ -419,7 +419,7 @@ def get_foraging_model_info(
         sess_idx = str(sess_i["ses_idx"])
 
         # edge case of two sessions in one day
-        if len(df) > 1:
+        if df is not None and len(df) > 1:
             num_trials_for_nwb = sess_i.finished_trials
             df = df.query(f"n_trials == {num_trials_for_nwb}")
 
