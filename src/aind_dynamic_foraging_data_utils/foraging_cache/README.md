@@ -240,8 +240,10 @@ duckdb.sql(f"DESCRIBE SELECT * FROM {READ_EVENTS}").df()                        
   `institute`, `hardware`, `curriculum_*`, `foraging_eff`, `finished_trials`, every metric). So
   **any filter on a Han column silently excludes them** (NULL fails every comparison — they
   "never return"). Their **trials/events are fully in the cache**, so reach them by
-  `subject_id`/`session_id` (or isolate them with `WHERE foraging_eff IS NULL`). Per-session
-  stats for these could be recomputed from their trials (a future enhancement).
+  `subject_id`/`session_id` (or isolate them with `WHERE foraging_eff IS NULL`). **We plan to
+  rebuild the session metric table directly from the cache** — recomputing these per-session
+  stats from the trial data (the single source of truth) — which will fill in the CO-only
+  sessions and eventually supersede Han's pipeline as the source of session metadata.
 
 ---
 
