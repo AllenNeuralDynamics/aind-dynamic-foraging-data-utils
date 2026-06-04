@@ -292,13 +292,29 @@ def _read_existing_session_table(path):
 def _add_s3_location_parallel(df, n_workers=100, verbose=True):
     """Parallel replacement for code_ocean_utils.add_s3_location().
 
-    Each row's ``location`` column is globbed on S3 for a ``.nwb`` file.
-    Uses a ThreadPoolExecutor since the work is I/O-bound (S3 API calls).
+    Resolves each CO asset's ``.nwb`` S3 path. The NWB lives at a deterministic
+    ``{location}/nwb/{session_name}.nwb``, so we construct that path and confirm
+    it with a single (non-recursive) ``fs.exists`` call — cheap. Only if that
+    misses (e.g. zarr-directory NWBs or atypical layouts) do we fall back to a
+    recursive ``{location}/**/*.nwb`` glob, which lists every object under the
+    asset. This keeps the common case to one S3 call instead of a full listing.
+
+    Uses a ThreadPoolExecutor since the work is I/O-bound (S3 API calls). More
+    threads do not scale past s3fs's shared connection pool, so ~100 is plenty.
     """
     fs = s3fs.S3FileSystem()
 
-    def _glob_one(location):
-        """Glob S3 for a .nwb file under the given location prefix."""
+    def _resolve_one(location, session_name):
+        """Return the s3:// path of the asset's .nwb, or '' if none found."""
+        # Fast path: deterministic constructed path, verified with one exists().
+        if isinstance(session_name, str) and session_name:
+            candidate = f"{location}/nwb/{session_name}.nwb"
+            try:
+                if fs.exists(candidate):
+                    return candidate if candidate.startswith("s3://") else f"s3://{candidate}"
+            except Exception:
+                pass
+        # Fallback: recursive glob (handles zarr dirs / atypical layouts).
         try:
             hits = fs.glob(f"{location}/**/*.nwb")
             return f"s3://{hits[0]}" if hits else ""
@@ -306,19 +322,26 @@ def _add_s3_location_parallel(df, n_workers=100, verbose=True):
             return ""
 
     locations = df["location"].tolist()
+    if "session_name" in df.columns:
+        session_names = df["session_name"].tolist()
+    else:
+        session_names = [None] * len(locations)
 
-    n_actual = min(n_workers, len(locations))
+    n_actual = min(n_workers, len(locations)) if locations else 1
     if verbose:
-        print(f"    Using {n_actual} threads for {len(locations)} S3 globs")
+        print(f"    Using {n_actual} threads to resolve {len(locations)} NWB S3 paths")
 
     results = [""] * len(locations)
-    with ThreadPoolExecutor(max_workers=n_actual) as pool:
-        future_to_idx = {pool.submit(_glob_one, loc): i for i, loc in enumerate(locations)}
+    with ThreadPoolExecutor(max_workers=max(1, n_actual)) as pool:
+        future_to_idx = {
+            pool.submit(_resolve_one, loc, sn): i
+            for i, (loc, sn) in enumerate(zip(locations, session_names))
+        }
         for n_done, future in enumerate(as_completed(future_to_idx), 1):
             idx = future_to_idx[future]
             results[idx] = future.result()
             if verbose and (n_done <= 3 or n_done % 50 == 0 or n_done == len(locations)):
-                print(f"    S3 glob: {n_done}/{len(locations)}")
+                print(f"    NWB path resolve: {n_done}/{len(locations)}")
 
     df = df.copy()
     df["s3_nwb_location"] = results
