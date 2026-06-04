@@ -101,6 +101,32 @@ df = duckdb.sql(f"""
 
 ---
 
+## Common filter columns (session table)
+
+Almost all analyses start by selecting sessions on a few columns of the **session table**, then
+joining to trials/events. The columns you'll filter on most:
+
+| Filter on | Column(s) | Example values / predicate |
+|---|---|---|
+| **Identity** | `subject_id`, `session_date` | `subject_id IN ('754372','758435')`; `session_date >= '2024-01-01'` |
+| **Data source** (rig / institute) | `data_source` | `AIND_training_447_bonsai`, `AIND_ephys_323_bonsai`, `Janelia_training_NA_bpod`, … → e.g. `data_source LIKE 'Janelia%'`, `data_source LIKE '%bpod'`, `data_source LIKE 'AIND_ephys%'` |
+| **Behavior task** | `task` | `Uncoupled Baiting`, `Coupled Baiting`, `Uncoupled Without Baiting`, `Coupled Without Baiting` → `task LIKE '%Uncoupled%'` |
+| **Curriculum** | `curriculum_name`, `curriculum_version` | e.g. `Uncoupled Baiting` / `'2.3'`; **`'None'` = off-curriculum** → `curriculum_name <> 'None'` for on-curriculum only |
+| **Performance metrics** | `finished_trials`, `finished_rate`, `foraging_eff`, `total_trials`, `reward_trials`, `bias_naive`, … | combine freely: `foraging_eff > 0.8 AND finished_trials > 200 AND finished_rate > 0.7` |
+| **Quality** | `is_bad_bowen_session` | `NOT is_bad_bowen_session` |
+
+> ⚠️ **`data_source` ≠ `nwb_data_source`.** `data_source` (Han) is the rig/institute origin
+> (`AIND_training_447_bonsai`, `Janelia_*_bpod`, …) — use it for high-level grouping.
+> `nwb_data_source` (`co_asset`/`bonsai_s3`/`bpod_s3`) is just *which NWB the cache built the
+> row from* — usually not what you want to filter on.
+>
+> **Curriculum "off" vs "missing":** off-curriculum sessions have the **string** `curriculum_name
+> = 'None'` (and `curriculum_version = 'None'`); the ~381 CO-only sessions absent from Han have
+> SQL `NULL`. To get genuinely on-curriculum sessions: `curriculum_name NOT IN ('None') AND
+> curriculum_name IS NOT NULL`.
+
+---
+
 ## Schema catalog
 
 Column types come straight from the files. To list **every** column of a table:
@@ -131,10 +157,13 @@ duckdb.sql(f"DESCRIBE SELECT * FROM {READ_EVENTS}").df()                        
 | `bias_naive` | DOUBLE | side bias, −1 (left) … +1 (right) |
 | `autowater_collected`, `autowater_ignored` | DOUBLE | autowater trial counts |
 | `reaction_time_median`, `early_lick_rate` | DOUBLE | timing / lick metrics |
-| `rig`, `trainer`, `PI`, `curriculum_name`, `current_stage_actual` | VARCHAR | session metadata |
+| `data_source` | VARCHAR | **rig / institute origin** (Han) — e.g. `AIND_training_447_bonsai`, `AIND_ephys_323_bonsai`, `Janelia_training_NA_bpod` (**≠ `nwb_data_source`**) |
+| `curriculum_name`, `curriculum_version` | VARCHAR | curriculum + version; **`'None'` = off-curriculum**, `NULL` = not in Han |
+| `current_stage_actual` | VARCHAR | curriculum stage reached |
+| `rig`, `trainer`, `PI` | VARCHAR | session metadata |
 | `weight_after`, `water_in_session_total` | DOUBLE | weight / water |
 | `logistic_*`, `abs(*_bias)` | DOUBLE | fitted logistic-regression model coefficients |
-| `nwb_data_source` | VARCHAR | `co_asset` \| `bonsai_s3` \| `bpod_s3` (which NWB built it) |
+| `nwb_data_source` | VARCHAR | `co_asset` \| `bonsai_s3` \| `bpod_s3` — which NWB the cache built the row from (not a science filter) |
 | `is_bad_bowen_session` | BOOLEAN | unreliable bonsai data (usually filter out) |
 | `co_asset_id`, `co_s3_nwb_uri` | VARCHAR | Code Ocean asset id / NWB URI (NULL if none) |
 
@@ -243,14 +272,17 @@ duckdb.sql(f"""
 """).df()
 ```
 
-**4. Filter on a combination of performance metrics → join to trials**
+**4. Filter on source + task + curriculum + performance metrics → join to trials**
 ```python
 duckdb.sql(f"""
     WITH sel AS (
         SELECT _session_id, subject_id, session_date
         FROM read_parquet('{SESSION_DB}')
-        WHERE foraging_eff > 0.8 AND finished_trials > 200
-          AND task LIKE '%Uncoupled%' AND NOT is_bad_bowen_session
+        WHERE data_source LIKE 'AIND%'                    -- rig / institute
+          AND task LIKE '%Uncoupled%'                     -- behavior task
+          AND curriculum_name NOT IN ('None')             -- on-curriculum only
+          AND foraging_eff > 0.8 AND finished_trials > 200 -- performance metrics
+          AND NOT is_bad_bowen_session
     )
     SELECT s.subject_id, s.session_date, t.session_id, t.trial,
            t.animal_response, t.earned_reward, t.reward_probabilityL, t.reward_probabilityR
