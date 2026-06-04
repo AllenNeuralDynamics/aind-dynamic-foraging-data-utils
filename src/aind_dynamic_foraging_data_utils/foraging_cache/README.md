@@ -317,11 +317,28 @@ Then ask your question in plain English.
 - `COUNT(*)` over the trial table → **~1 s**.
 - **Return-loop join** (filter sessions → pull all their trials + events) → **~44 s** over S3.
 
-Querying the cache (solid) vs the legacy per-session NWB route (dashed, extrapolated) — **~4
-orders of magnitude faster** at full-dataset scale, because the cache eliminates the per-session
-docDB query that dominates the legacy path:
+### vs. the legacy `nwb_utils` route
 
-![Cache vs legacy fetch time](validate/cache_vs_legacy.png)
+The way to get this data *without* the cache is to open each session's NWB yourself —
+`code_ocean_utils.get_subject_assets()` (docDB query) → `add_s3_location()` (S3 glob) →
+`nwb_utils.create_df_trials()` / `create_df_events()` — **one session at a time**. That costs
+**~23 s per session** (dominated by the **~17 s docDB query**; +~4 s to open/parse the NWB,
++~3 s for events), and it does **not** scale: there's no projection (you read the whole NWB to
+get 5 columns) and every session pays the docDB round-trip again. The cache replaces the whole
+chain with a single parquet scan:
+
+| Fetch | **Cache** (DuckDB / parquet) | **Legacy `nwb_utils`** (per-session NWB) |
+|---|---|---|
+| 1 session, trials | ~1 s | ~23 s |
+| 100 sessions, trials | ~3 s | **~40 min** |
+| Full DB (~23.6k), 5-col | **~3 s** | **~6 days** |
+| Full DB, full 103-col | **~53 s** | ~6 days |
+
+→ **~4 orders of magnitude faster** at full-dataset scale, verified equivalent to a direct
+`nwb_utils` read (33/33 sessions exact-match — see `README_build.md`). Solid = cache (measured),
+dashed = legacy `nwb_utils` (per-session cost, extrapolated):
+
+![Cache vs legacy nwb_utils fetch time](validate/cache_vs_legacy.png)
 
 Memory scales with the columns you select (projection ≈ 17× less RAM); per-subject coalescing
 keeps file-open overhead small even for full-width loads. See [`README_build.md`](README_build.md)
