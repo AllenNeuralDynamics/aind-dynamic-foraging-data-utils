@@ -695,9 +695,11 @@ def _read_session_with_fallback(nwb_path, nwb_data_source, session_id, legacy_fa
       - co_asset  : AIND reader on the CO-asset S3 URI. On ANY error that breaks
                     the AIND reader — quality assertions (AINDReaderQualityError,
                     e.g. post-2025 "Reward before choice time") as well as
-                    TypeErrors / parse / S3 failures — log the reason and fall
-                    back to the legacy reader on the local Han NWB
-                    (legacy_fallback_path), if available.
+                    TypeErrors / parse / empty/invalid/missing S3 location — log
+                    the reason and fall back to the legacy reader, trying the
+                    first NWB that reads: the local Han NWB (legacy_fallback_path)
+                    if present, then the CO asset's own NWB (lenient, skips the
+                    AIND assertions). Raises only if neither reads.
       - bonsai_s3 : legacy reader directly.
       - bpod_s3   : legacy reader directly (pynwb also crashes on many old bpod
                     files; the legacy reader has an h5py fallback).
@@ -738,7 +740,13 @@ def _read_session_with_fallback(nwb_path, nwb_data_source, session_id, legacy_fa
             "legacy_bonsai",
         )
 
-    # CO asset -> AIND reader on the S3 URI; fall back to the local Han NWB.
+    # CO asset -> AIND reader on the S3 URI. On ANY failure (quality assertion,
+    # parse error, empty/invalid/missing S3 location, ...), fall back to the
+    # legacy Han-pipeline reader, trying it on the first NWB that reads:
+    #   1. the local Han bonsai/bpod NWB (the Han pipeline's own file), if present;
+    #   2. the CO asset's own NWB (a lenient read that skips the AIND assertions).
+    # If neither reads (e.g. the CO NWB is genuinely missing and there is no Han
+    # NWB), raise so the caller logs a hard failure.
     try:
         return (
             nwb_reader_aind.read_trials(nwb_path),
@@ -746,29 +754,25 @@ def _read_session_with_fallback(nwb_path, nwb_data_source, session_id, legacy_fa
             "aind",
         )
     except Exception as exc:
-        # Fall back on ANY AIND-reader breakage: quality assertions
-        # (AINDReaderQualityError) as well as TypeErrors, parse/S3 errors, etc.
-        # Distinguish the kind in the log so quality rejections stay visible.
         kind = "quality" if isinstance(exc, AINDReaderQualityError) else type(exc).__name__
-        if legacy_fallback_path is None:
-            logger.warning(
-                "AIND reader failed for %s (%s): %s -- no local Han NWB to fall back to",
-                session_id,
-                kind,
-                exc,
-            )
-            raise
         logger.warning(
-            "AIND reader failed for %s (%s): %s -- falling back to legacy reader",
+            "AIND reader failed for %s (%s): %s -- trying legacy fallback",
             session_id,
             kind,
             exc,
         )
-        return (
-            nwb_reader_legacy.read_trials(legacy_fallback_path),
-            nwb_reader_legacy.read_events(legacy_fallback_path),
-            "aind_fallback_legacy",
-        )
+        for label, path in (("local Han NWB", legacy_fallback_path), ("CO asset NWB", nwb_path)):
+            if not path:
+                continue
+            try:
+                return (
+                    nwb_reader_legacy.read_trials(path),
+                    nwb_reader_legacy.read_events(path),
+                    "aind_fallback_legacy",
+                )
+            except Exception as e2:
+                logger.warning("  legacy fallback on %s failed for %s: %s", label, session_id, e2)
+        raise  # nothing readable -> hard failure (logged by the caller)
 
 
 # ---------------------------------------------------------------------------
@@ -794,8 +798,8 @@ def build_trial_and_event_tables(  # noqa: C901
     using parallel processing across multiple CPU cores.
 
     NWB reader strategy per session (see references/data-sources.md):
-      - CO asset  : AIND reader on the docDB S3 URI; on AINDReaderQualityError,
-        fall back to the legacy reader on the local Han NWB.
+      - CO asset  : AIND reader on the docDB S3 URI; on ANY error, fall back to
+        the legacy reader on the local Han NWB or, failing that, on the CO NWB itself.
       - bonsai S3 : legacy reader directly (AIND reader is NOT used on Han NWBs).
       - bpod S3   : legacy reader directly.
 
