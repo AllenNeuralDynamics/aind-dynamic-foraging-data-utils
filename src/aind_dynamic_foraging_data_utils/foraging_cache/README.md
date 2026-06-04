@@ -228,6 +228,50 @@ file-open overhead small even for the full-width load.
 
 ---
 
+## Validation
+
+The cache was validated end-to-end against the legacy NWB read paths and Han's master
+session table. Scripts live in [`validate/`](validate/) (`validate_step1.py`,
+`validate_step2.py`, `plot_validation.py`); artifacts write to `scratch/tmp/validation/`.
+
+**Step 1 — data equivalence + speed.** Sampling per source (co_asset / bonsai / bpod), the
+cache returns *exactly* the same trial data as a direct NWB read (**33/33 sessions exact
+match**: 5-col, full, and full+events). Fetch time is measured at every scale (median over
+repeated, re-sampled draws) against the TRUE legacy CO chain run serially —
+`get_subject_assets` (docDB query) → `add_s3_location` (S3 glob) → `nwb_utils.create_df_*`
+— which is extrapolated (~23 s/session, dominated by the ~17 s docDB query):
+
+| fetch | cache, full DB (~23.6k sessions) | legacy CO chain, full DB |
+|---|---|---|
+| 5-column trials | **~3 s** | ~23 s/session → **~6 days** |
+| full 103-col trials | **~53 s** | ~23 s/session → ~6 days |
+| trials + events | ~64 s (at 10k) | ~27 s/session |
+
+→ the cache is **~4 orders of magnitude faster**; it eliminates the per-session docDB query
+that dominates the legacy route.
+
+![Cache vs legacy fetch time](validate/cache_vs_legacy.png)
+
+**Step 2 — apples-to-apples vs Han's master table.** Han's session stats are specific *sums
+over `df_trial`* (`process_nwbs.py`), and crucially Han's `total_trials` **excludes autowater
+trials**. Reproducing each Han definition from the cache trial table
+(`non_aw = auto_waterL==0 & auto_waterR==0`; `IGNORE=2`; left/right recovered from
+`bias_naive`+`finished_trials`), all metrics agree per-session:
+
+| metric | exact match | metric | exact match |
+|---|---|---|---|
+| total_trials (incl. autowater) | 97.4% | autowater_trials | 99.7% |
+| total_trials (foraging, non-AW) | 97.4% | reward_trials (earned) | 98.0% |
+| finished_trials | 97.8% | left / right choices | 98.0% |
+
+By source: **bpod 100%, bonsai 99.8%** (same NWBs as Han → true apples-to-apples);
+**co_asset 96.2%** is the only notable residual — those sessions read the AIND CO NWB while
+Han read the bonsai NWB (different files/pipelines), plus ~14 truncated CO assets. Han's
+pipeline trims no trials, so the cache reproduces Han's master table as a single source of
+truth.
+
+---
+
 ## Known limitations
 - **Genuinely unreadable CO assets hard-fail** (~14 / 23.9k ≈ 0.06%, logged in
   `processing_log.csv` with `status=failed`): the NWB is missing at its S3 location, or the

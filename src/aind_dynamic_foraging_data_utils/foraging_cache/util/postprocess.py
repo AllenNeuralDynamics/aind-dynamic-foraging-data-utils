@@ -57,7 +57,7 @@ def append_triage_log(log_csv_path, results, verbose=True):
     df_all = df_all.sort_values(["subject_id", "session_date", "nwb_suffix"]).reset_index(drop=True)
     write_csv(df_all, log_csv_path)
     if verbose:
-        print(f"  Triage log: {len(df_new)} sessions updated -> {log_csv_path} ({len(df_all)} total)")
+        print(f"  Triage log: {len(df_new)} updated -> {log_csv_path} ({len(df_all)} total)")
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +127,7 @@ class _PartitionFS:
     """Minimal list/read/write/delete/rename over one partition dir (local or S3)."""
 
     def __init__(self, output_prefix, part):
+        """Bind to one partition dir under ``output_prefix`` (S3 or local)."""
         self.is_s3 = output_prefix.startswith("s3://")
         if self.is_s3:
             self._fs = s3fs.S3FileSystem(anon=False)
@@ -135,6 +136,7 @@ class _PartitionFS:
             self.base = os.path.join(output_prefix, part)
 
     def list(self):
+        """Return the file names in the partition dir (empty if it doesn't exist)."""
         if self.is_s3:
             try:
                 return [p.split("/")[-1] for p in self._fs.ls(self.base)]
@@ -145,12 +147,14 @@ class _PartitionFS:
         return os.listdir(self.base)
 
     def read_parquet(self, name):
+        """Read one parquet file from the partition into a DataFrame."""
         if self.is_s3:
             with self._fs.open(f"{self.base}/{name}", "rb") as f:
                 return pd.read_parquet(f)
         return pd.read_parquet(os.path.join(self.base, name))
 
     def write_parquet(self, df, name):
+        """Write a DataFrame to one parquet file in the partition."""
         if self.is_s3:
             with self._fs.open(f"{self.base}/{name}", "wb") as f:
                 df.to_parquet(f, index=False)
@@ -158,12 +162,14 @@ class _PartitionFS:
             df.to_parquet(os.path.join(self.base, name), index=False)
 
     def delete(self, name):
+        """Delete one file from the partition."""
         if self.is_s3:
             self._fs.rm(f"{self.base}/{name}")
         else:
             os.remove(os.path.join(self.base, name))
 
     def rename(self, src, dst):
+        """Rename a file within the partition."""
         if self.is_s3:
             self._fs.mv(f"{self.base}/{src}", f"{self.base}/{dst}")
         else:

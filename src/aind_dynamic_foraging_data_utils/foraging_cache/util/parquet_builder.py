@@ -366,6 +366,7 @@ def _merge_han_and_co(df_han, df_co, verbose=True):  # noqa: C901
 
     # --- Attach CO to each Han row: exact 3-tuple first, then single-day 2-tuple ---
     def _co_for_han(row):
+        """Find the CO asset for a Han row: exact 3-tuple, else single-day 2-tuple."""
         suf = int(row["nwb_suffix"]) if pd.notna(row["nwb_suffix"]) else -1
         hit = co3.get((row["subject_id"], row["session_date"], suf))
         if hit is None:
@@ -398,7 +399,9 @@ def _merge_han_and_co(df_han, df_co, verbose=True):  # noqa: C901
         for r in multi.itertuples(index=False)
     ]
     matched_days = set(
-        multi.loc[multi["_exact"], ["subject_id", "session_date"]].itertuples(index=False, name=None)
+        multi.loc[multi["_exact"], ["subject_id", "session_date"]].itertuples(
+            index=False, name=None
+        )
     )
     df_skipped = multi[~multi["_exact"]].copy()
     df_skipped["skip_reason"] = [
@@ -1154,5 +1157,3 @@ def _read_json(path):
     else:
         with open(path, "r") as f:
             return json.load(f)
-
-

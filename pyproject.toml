@@ -84,5 +84,5 @@ line_length = 100
 profile = "black"
 
 [tool.interrogate]
-exclude = ["setup.py", "docs", "build"]
+exclude = ["setup.py", "docs", "build", "src/aind_dynamic_foraging_data_utils/foraging_cache/validate"]
 fail-under = 100

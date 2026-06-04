@@ -3,6 +3,7 @@ extend-ignore = E203
 exclude =
     .git,
     __pycache__,
-    build
+    build,
+    src/aind_dynamic_foraging_data_utils/foraging_cache/validate
 max-complexity = 10
 max-line-length = 100

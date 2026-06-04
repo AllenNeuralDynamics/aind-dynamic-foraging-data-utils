@@ -66,26 +66,32 @@ class Config:
 
     @property
     def is_s3(self) -> bool:
+        """Whether the output target is an S3 prefix (vs a local dir)."""
         return self.out_dir.startswith("s3://")
 
     @property
     def session_out(self) -> str:
+        """Path to the flat session-table parquet."""
         return f"{self.out_dir}/session_table.parquet"
 
     @property
     def trial_out(self) -> str:
+        """Prefix of the Hive-partitioned trial table."""
         return f"{self.out_dir}/trial_table"
 
     @property
     def event_out(self) -> str:
+        """Prefix of the Hive-partitioned event table."""
         return f"{self.out_dir}/event_table"
 
     @property
     def meta_out(self) -> str:
+        """Path to the incremental-build metadata JSON."""
         return f"{self.out_dir}/build_metadata.json"
 
     @property
     def log_csv(self) -> str:
+        """Path to the human-readable per-session triage log CSV."""
         return f"{self.out_dir}/processing_log.csv"
 
 
@@ -256,6 +262,7 @@ def parse_args(argv=None) -> Config:
 
 
 def _banner(title: str) -> None:
+    """Print a titled banner to delimit pipeline stages in the log."""
     print("\n" + "=" * 60)
     print(title)
     print("=" * 60)

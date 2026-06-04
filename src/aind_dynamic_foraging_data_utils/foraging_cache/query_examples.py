@@ -96,6 +96,7 @@ def run(out_dir, task_like="%Uncoupled%", min_foraging_eff=0.8, verbose=True):
 
 
 def main(argv=None):
+    """Parse CLI args and run the read-back query examples against a built cache."""
     p = argparse.ArgumentParser(description="Read-back query examples for the foraging cache.")
     p.add_argument("--out-dir", required=True,
                    help="cache location (local dir or s3:// prefix) built by build_cache")
