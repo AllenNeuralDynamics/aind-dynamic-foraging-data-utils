@@ -15,6 +15,10 @@ of opening thousands of NWBs.
 > [**foraging behavior browser**](https://foraging-behavior-browser.allenneuraldynamics.org/)
 > (Streamlit) renders this same session table with rich plots and point-and-click filters —
 > a great way to find sessions/subjects before pulling their trials/events here.
+> *Caveat:* the app is built from **Han's pipeline** only, so the **~381 CO-only sessions** this
+> cache adds from the Code Ocean universe (all `nwb_data_source = 'co_asset'`, with NULL Han
+> metadata — find them via `WHERE foraging_eff IS NULL`) **do not appear in the app**, even though
+> their trials/events are fully in the cache.
 
 > 🔧 **Building or extending the database?** See **[`README_build.md`](README_build.md)**.
 
@@ -229,6 +233,15 @@ duckdb.sql(f"DESCRIBE SELECT * FROM {READ_EVENTS}").df()                        
 - **`is_bad_bowen_session = TRUE`** marks unreliable bonsai data — usually exclude it.
 - **NULLs:** `union_by_name` fills reader-specific columns with `NULL`; numeric comparisons
   (`> 0.8`) drop NULL/NaN rows.
+- **⚠️ The ~381 CO-only sessions have NO Han metadata.** Sessions added from the Code Ocean
+  universe but absent from Han's pipeline (`nwb_data_source = 'co_asset'`) have **only 8 of 160
+  session columns populated** (`subject_id, session_date, nwb_suffix, _session_id, co_asset_id,
+  co_s3_nwb_uri, is_bad_bowen_session, nwb_data_source`); **all Han columns are NULL** (`task`,
+  `institute`, `hardware`, `curriculum_*`, `foraging_eff`, `finished_trials`, every metric). So
+  **any filter on a Han column silently excludes them** (NULL fails every comparison — they
+  "never return"). Their **trials/events are fully in the cache**, so reach them by
+  `subject_id`/`session_id` (or isolate them with `WHERE foraging_eff IS NULL`). Per-session
+  stats for these could be recomputed from their trials (a future enhancement).
 
 ---
 
