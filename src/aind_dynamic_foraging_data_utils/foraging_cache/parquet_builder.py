@@ -516,7 +516,14 @@ def _merge_han_and_co(df_han, df_co, verbose=True):  # noqa: C901
     Match rule (see GitHub issue #146 for the multi-session-per-day background):
 
       Han has at most ONE session per (subject_id, session_date) — verified — which
-      is what makes the 2-tuple safe for the single-session case.
+      is what makes the 2-tuple safe for the single-session case. Han's pipeline
+      enforces this itself: when a mouse has multiple NWBs on one day, its
+      add_session_number() keeps only the session with the most finished_trials
+      (assigns it the session number) and sets the others to NaN. So Han's "one
+      session that day" is specifically the max-finished-trials one — which is also
+      why its HH-MM-SS lines up with one of the CO sessions in the 3-tuple match.
+      See aind-foraging-behavior-bonsai-basic/code/process_nwbs.py#L569-L573:
+      https://github.com/AllenNeuralDynamics/aind-foraging-behavior-bonsai-basic/blob/0b63a460682b8b497be5b9c14329e4520c92ffda/code/process_nwbs.py#L569-L573
 
       * CO has ONE session that (subject, date)  [single-session-per-day]:
           - (subject, date) present in Han  -> attach the CO asset to that Han row
