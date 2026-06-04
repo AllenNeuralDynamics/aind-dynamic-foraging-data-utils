@@ -5,8 +5,11 @@ This reader handles both bonsai and bpod NWB files using a simpler trial-
 extraction approach that avoids the assertion-heavy AIND reader.
 
 Key differences from the AIND reader (``nwb_utils.create_df_trials``):
-  - Does NOT access ``bpod_backup_BehavioralEvents`` (which is malformed in
-    many old bpod NWBs and crashes pynwb).
+  - Reads bpod behavioral events (licks, reward deliveries, opto) from the
+    dedicated per-channel ``/acquisition/*_time`` groups. Skips only the
+    redundant ``bpod_backup_BehavioralEvents`` backup, which has no
+    ``timestamps`` dataset (malformed for pynwb) and carries no event data
+    not already present in the per-channel groups — so nothing is lost.
   - Skips the reward-before-choice-time and reward-time sanity checks that
     fail on 2025+ bonsai NWBs.
   - Falls back to raw h5py reading if pynwb cannot load the file at all.
@@ -178,7 +181,9 @@ def _compute_df_trial(nwb, nwb_path):
     Extract trial table from a loaded NWB object.
 
     Adapted from Han's ``compute_df_trial()`` in process_nwbs.py.
-    Does NOT access ``bpod_backup_BehavioralEvents``.
+    Per-trial lick times come from the dedicated ``/acquisition/*_lick_time``
+    channels; the redundant ``bpod_backup_BehavioralEvents`` backup is not
+    accessed (see module docstring).
     """
     df_trial = nwb.trials.to_dataframe().copy()
 
