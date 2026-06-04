@@ -11,6 +11,11 @@ of opening thousands of NWBs.
 > It will return runnable DuckDB that follows the conventions below — including the key
 > columns. See [**Use an LLM**](#use-an-llm-to-write-queries) for a copy-paste preamble.
 
+> 📊 **Prefer to browse the session metadata visually?** The interactive
+> [**foraging behavior browser**](https://foraging-behavior-browser.allenneuraldynamics.org/)
+> (Streamlit) renders this same session table with rich plots and point-and-click filters —
+> a great way to find sessions/subjects before pulling their trials/events here.
+
 > 🔧 **Building or extending the database?** See **[`README_build.md`](README_build.md)**.
 
 ---
