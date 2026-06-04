@@ -630,17 +630,21 @@ def _process_single_session(row_dict):
     """
     Worker function: process one session and write its trial/event parquet files.
 
-    NWB reader strategy:
-      1. For bpod NWBs: use legacy reader directly (pynwb crashes on many old files)
-      2. For bonsai / CO asset NWBs: try AIND reader first
-      3. On AINDReaderQualityError: log warning, fall back to legacy reader
+    NWB reader strategy (see references/data-sources.md):
+      - CO asset  -> AIND reader (nwb_utils) on the docDB S3 URI. On
+        AINDReaderQualityError, fall back to the legacy reader on the local Han
+        NWB (if one exists for this session).
+      - bonsai S3 -> legacy reader directly (the AIND reader is NOT run on Han
+        bonsai NWBs).
+      - bpod S3   -> legacy reader directly.
 
     Returns:
         dict: {
             "session_id" : str,
             "status"     : "ok" | "skipped" | "failed",
             "data_source": "co_asset" | "bonsai_s3" | "bpod_s3" | None,
-            "reader"     : "aind" | "aind_fallback_legacy" | "legacy_bpod" | None,
+            "reader"     : "aind" | "aind_fallback_legacy"
+                           | "legacy_bonsai" | "legacy_bpod" | None,
             "error"      : str | None,
         }
     """
@@ -663,18 +667,27 @@ def _process_single_session(row_dict):
     co_s3_uri = row_dict.get("co_s3_nwb_uri", None)
 
     # ---- Determine NWB source (priority: CO asset > bonsai > bpod) ----
+    # The local Han bonsai/bpod NWB for this session (if any). It is the primary
+    # path for bonsai/bpod sessions, and the legacy-reader fallback when the AIND
+    # reader fails on a CO asset.
+    suffix_int = int(nwb_suffix) if pd.notna(nwb_suffix) else -1
+    local_nwb_path = nwb_file_index.get((subject_id, session_date, suffix_int))
+
     nwb_path = None
     nwb_data_source = None
+    legacy_fallback_path = None
 
     if pd.notna(co_s3_uri) and co_s3_uri != "":
+        # CO asset -> AIND reader on the S3 URI; fall back to the local Han NWB.
         nwb_path = co_s3_uri
         nwb_data_source = "co_asset"
-    elif not is_bad_bowen:
-        suffix_int = int(nwb_suffix) if pd.notna(nwb_suffix) else -1
-        key = (subject_id, session_date, suffix_int)
-        if key in nwb_file_index:
-            nwb_path = nwb_file_index[key]
-            nwb_data_source = "bpod_s3" if nwb_path.startswith(LOCAL_BPOD_NWB_DIR) else "bonsai_s3"
+        legacy_fallback_path = local_nwb_path
+    elif not is_bad_bowen and local_nwb_path is not None:
+        # No CO asset -> read the local Han NWB directly with the legacy reader.
+        nwb_path = local_nwb_path
+        nwb_data_source = (
+            "bpod_s3" if local_nwb_path.startswith(LOCAL_BPOD_NWB_DIR) else "bonsai_s3"
+        )
 
     if nwb_path is None:
         return {
@@ -685,10 +698,10 @@ def _process_single_session(row_dict):
             "error": None,
         }
 
-    # ---- Read NWB using try-AIND-then-fallback strategy ----
+    # ---- Read NWB (AIND reader for CO assets, legacy reader for Han NWBs) ----
     try:
         df_trials, df_events, reader_used = _read_session_with_fallback(
-            nwb_path, nwb_data_source, session_id
+            nwb_path, nwb_data_source, session_id, legacy_fallback_path
         )
 
         for df_out in [df_trials, df_events]:
@@ -719,50 +732,75 @@ def _process_single_session(row_dict):
         }
 
 
-def _read_session_with_fallback(nwb_path, nwb_data_source, session_id):
+def _read_session_with_fallback(nwb_path, nwb_data_source, session_id, legacy_fallback_path=None):
     """
-    Read trial and event tables from an NWB file using the try-AIND-then-legacy
-    fallback strategy.
+    Route a session to the correct NWB reader.
 
-    For bpod NWBs: use legacy reader directly (pynwb crashes on many old files
-    due to malformed bpod_backup_BehavioralEvents TimeSeries).
+    The AIND data-util reader (nwb_utils.create_df_trials / create_df_events) is
+    designed for AIND-pipeline CO-asset NWBs and is used ONLY for those. Han
+    bonsai/bpod NWBs are read with the legacy reader directly.
 
-    For bonsai / CO asset NWBs:
-      1. Try the AIND reader (nwb_utils.create_df_trials / create_df_events)
-      2. On AINDReaderQualityError: log warning, fall back to legacy reader
+      - co_asset  : AIND reader on the CO-asset S3 URI. On AINDReaderQualityError
+                    (e.g. post-2025 "Reward before choice time"), log a warning
+                    and fall back to the legacy reader on the local Han NWB
+                    (legacy_fallback_path), if available.
+      - bonsai_s3 : legacy reader directly.
+      - bpod_s3   : legacy reader directly (pynwb also crashes on many old bpod
+                    files; the legacy reader has an h5py fallback).
+
+    Args:
+        nwb_path (str)            : Primary NWB path (CO S3 URI, or local Han NWB).
+        nwb_data_source (str)     : "co_asset" | "bonsai_s3" | "bpod_s3".
+        session_id (str)          : For log messages.
+        legacy_fallback_path (str): Local Han NWB to use if the AIND reader fails
+                                    on a CO asset. None disables the fallback.
 
     Returns:
         (df_trials, df_events, reader_used_str) where reader_used_str is one of:
-          "aind"                -- data-util AIND reader, succeeded directly
-          "aind_fallback_legacy"-- AIND reader failed, fell back to legacy bonsai reader
-          "legacy_bpod"         -- legacy bpod reader used directly (no AIND attempted)
+          "aind"                 -- AIND reader on the CO asset, succeeded
+          "aind_fallback_legacy" -- AIND reader failed; legacy reader on Han NWB
+          "legacy_bonsai"        -- legacy reader on a Han bonsai NWB
+          "legacy_bpod"          -- legacy reader on a Han bpod NWB
     """
     from aind_dynamic_foraging_data_utils.foraging_cache import nwb_reader_aind, nwb_reader_legacy
     from aind_dynamic_foraging_data_utils.foraging_cache.nwb_reader_aind import (
         AINDReaderQualityError,
     )
 
-    # bpod NWBs -> legacy reader directly (pynwb can't even load many of them)
+    # Han bonsai/bpod NWBs -> legacy reader directly (never the AIND reader).
     if nwb_data_source == "bpod_s3":
-        df_trials = nwb_reader_legacy.read_trials(nwb_path)
-        df_events = nwb_reader_legacy.read_events(nwb_path)
-        return df_trials, df_events, "legacy_bpod"
+        return (
+            nwb_reader_legacy.read_trials(nwb_path),
+            nwb_reader_legacy.read_events(nwb_path),
+            "legacy_bpod",
+        )
+    if nwb_data_source == "bonsai_s3":
+        return (
+            nwb_reader_legacy.read_trials(nwb_path),
+            nwb_reader_legacy.read_events(nwb_path),
+            "legacy_bonsai",
+        )
 
-    # bonsai / CO asset -> try AIND first, fall back to legacy
+    # CO asset -> AIND reader on the S3 URI; fall back to the local Han NWB.
     try:
-        df_trials = nwb_reader_aind.read_trials(nwb_path)
-        df_events = nwb_reader_aind.read_events(nwb_path)
-        return df_trials, df_events, "aind"
-
+        return (
+            nwb_reader_aind.read_trials(nwb_path),
+            nwb_reader_aind.read_events(nwb_path),
+            "aind",
+        )
     except AINDReaderQualityError as exc:
         logger.warning(
             "AIND reader quality error for %s: %s  -- falling back to legacy reader",
             session_id,
             exc,
         )
-        df_trials = nwb_reader_legacy.read_trials(nwb_path)
-        df_events = nwb_reader_legacy.read_events(nwb_path)
-        return df_trials, df_events, "aind_fallback_legacy"
+        if legacy_fallback_path is None:
+            raise
+        return (
+            nwb_reader_legacy.read_trials(legacy_fallback_path),
+            nwb_reader_legacy.read_events(legacy_fallback_path),
+            "aind_fallback_legacy",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -785,10 +823,11 @@ def build_trial_and_event_tables(  # noqa: C901
     Build trial-level and event-level Hive-partitioned parquet tables from NWB files,
     using parallel processing across multiple CPU cores.
 
-    NWB reader strategy per session:
-      - bpod NWBs: legacy reader directly (avoids pynwb crash on old files)
-      - bonsai / CO asset NWBs: try AIND reader first, fall back to legacy on
-        AINDReaderQualityError (assertion failures in post-2025 data)
+    NWB reader strategy per session (see references/data-sources.md):
+      - CO asset  : AIND reader on the docDB S3 URI; on AINDReaderQualityError,
+        fall back to the legacy reader on the local Han NWB.
+      - bonsai S3 : legacy reader directly (AIND reader is NOT used on Han NWBs).
+      - bpod S3   : legacy reader directly.
 
     Parallelism uses ProcessPoolExecutor because pynwb/h5py is not thread-safe.
     n_workers defaults to CO_CPUS env var, then os.cpu_count() - 1.
@@ -803,9 +842,10 @@ def build_trial_and_event_tables(  # noqa: C901
             "n_bonsai_s3"          : int,
             "n_bpod_s3"            : int,
             # reader breakdown (processed sessions only)
-            "n_aind_reader"        : int,   # data-util AIND reader, no fallback
-            "n_aind_fallback_legacy": int,  # AIND tried, fell back to legacy bonsai
-            "n_legacy_bpod"        : int,   # legacy bpod reader used directly
+            "n_aind_reader"        : int,   # AIND reader on CO asset, no fallback
+            "n_aind_fallback_legacy": int,  # AIND tried on CO asset, fell back to legacy
+            "n_legacy_bonsai"      : int,   # legacy reader on Han bonsai NWB
+            "n_legacy_bpod"        : int,   # legacy reader on Han bpod NWB
             "failed_sessions"      : list[dict],
         }
     """
@@ -868,6 +908,7 @@ def build_trial_and_event_tables(  # noqa: C901
         # reader breakdown
         "n_aind_reader": 0,
         "n_aind_fallback_legacy": 0,
+        "n_legacy_bonsai": 0,
         "n_legacy_bpod": 0,
         "failed_sessions": [],
     }
@@ -877,6 +918,7 @@ def build_trial_and_event_tables(  # noqa: C901
     _READER_LABEL = {
         "aind": "aind",
         "aind_fallback_legacy": "aind->legacy",
+        "legacy_bonsai": "legacy_bonsai",
         "legacy_bpod": "legacy_bpod",
     }
     _SOURCE_LABEL = {
@@ -923,6 +965,8 @@ def build_trial_and_event_tables(  # noqa: C901
                     summary["n_aind_reader"] += 1
                 elif reader == "aind_fallback_legacy":
                     summary["n_aind_fallback_legacy"] += 1
+                elif reader == "legacy_bonsai":
+                    summary["n_legacy_bonsai"] += 1
                 elif reader == "legacy_bpod":
                     summary["n_legacy_bpod"] += 1
             elif status == "skipped":
