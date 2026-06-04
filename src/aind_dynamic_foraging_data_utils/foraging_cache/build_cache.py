@@ -200,6 +200,10 @@ def main(cfg: Config) -> dict:
         level=logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # s3fs/aiobotocore emit benign "Task ... attached to a different loop"
+    # tracebacks when worker S3 clients are torn down (the read/write already
+    # succeeded). Quiet the asyncio logger so they don't clutter the build log.
+    logging.getLogger("asyncio").setLevel(logging.CRITICAL)
     if not cfg.is_s3:
         os.makedirs(cfg.out_dir, exist_ok=True)
 
