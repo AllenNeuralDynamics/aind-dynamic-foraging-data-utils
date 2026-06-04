@@ -123,9 +123,14 @@ def read_trials(nwb_path):
 
     try:
         if use_h5py_fallback:
-            return _compute_df_trial_h5py(nwb_path)
+            df_trial = _compute_df_trial_h5py(nwb_path)
         else:
-            return _compute_df_trial(nwb, nwb_path)
+            df_trial = _compute_df_trial(nwb, nwb_path)
+        # 0-based per-session trial index, to match the AIND reader's ``trial`` column
+        # (the legacy NWB trial table has no explicit trial-number column, so without
+        # this it would be NaN for all bonsai/bpod rows under union_by_name).
+        df_trial["trial"] = np.arange(len(df_trial))
+        return df_trial
     finally:
         if io is not None:
             try:

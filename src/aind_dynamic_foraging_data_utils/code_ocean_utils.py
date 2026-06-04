@@ -222,6 +222,13 @@ def get_dynamic_foraging_assets(pagination=True, paginate_batch_size=5000, proje
             "location": 1,
             "external_links": 1,
             "subject.subject_id": 1,
+            # Descriptive session metadata, used to fill CO-only sessions that are
+            # absent from Han: task / curriculum / stage come from the task-GUI
+            # parameters; rig_id + modality let us derive room / rig_type.
+            "session.session_type": 1,
+            "session.rig_id": 1,
+            "session.stimulus_epochs.output_parameters.task_parameters": 1,
+            "data_description.modality": 1,
         }
 
     records = client.retrieve_docdb_records(
@@ -257,6 +264,38 @@ def get_dynamic_foraging_assets(pagination=True, paginate_batch_size=5000, proje
         df["subject_id"] = [
             s.get("subject_id") if isinstance(s, dict) else None for s in df["subject"]
         ]
+
+    # Flatten descriptive session metadata (task / curriculum / stage from the task-GUI
+    # parameters in the first stimulus epoch, plus rig_id and modality).
+    def _task_params(sess):
+        """task_parameters dict from the first stimulus epoch's output_parameters."""
+        epochs = (sess or {}).get("stimulus_epochs") or []
+        if epochs:
+            return (epochs[0].get("output_parameters") or {}).get("task_parameters") or {}
+        return {}
+
+    def _get(obj, key):
+        """Safe .get on a possibly-non-dict cell."""
+        return obj.get(key) if isinstance(obj, dict) else None
+
+    sessions = df["session"] if "session" in df.columns else [None] * len(df)
+    descrs = df["data_description"] if "data_description" in df.columns else [None] * len(df)
+    tps = [_task_params(s) for s in sessions]
+    df["co_task"] = [tp.get("Task") for tp in tps]
+    df["curriculum_in_use"] = [tp.get("curriculum_in_use") for tp in tps]
+    df["stage_in_use"] = [tp.get("stage_in_use") for tp in tps]
+    df["co_session_type"] = [_get(s, "session_type") for s in sessions]
+    df["co_rig_id"] = [_get(s, "rig_id") for s in sessions]
+    df["co_modality"] = [
+        ",".join(
+            m.get("abbreviation", "")
+            for m in (_get(d, "modality") or [])
+            if isinstance(m, dict)
+        )
+        for d in descrs
+    ]
+    df = df.drop(columns=[c for c in ["session", "data_description", "external_links", "subject"]
+                          if c in df.columns])
 
     return df.reset_index(drop=True)
 

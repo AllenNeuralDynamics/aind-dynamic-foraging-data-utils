@@ -135,7 +135,9 @@ def _load_or_fetch_co_discovery(cfg: Config):
 
     print(f"  fetching docDB discovery, caching -> {cfg.co_cache}")
     co = get_dynamic_foraging_assets()
-    cols = ["name", "session_name", "location", "code_ocean_asset_id", "subject_id"]
+    cols = ["name", "session_name", "location", "code_ocean_asset_id", "subject_id",
+            "co_task", "co_session_type", "curriculum_in_use", "stage_in_use",
+            "co_rig_id", "co_modality"]
     co[[c for c in cols if c in co.columns]].to_parquet(cfg.co_cache)
     return co
 

@@ -360,7 +360,7 @@ def _merge_han_and_co(df_han, df_co, verbose=True):  # noqa: C901
     df_han["co_s3_nwb_uri"] = [p[1] for p in pairs]
 
     # --- CO-only NEW rows: single-day CO sessions whose (subject,date) not in Han ---
-    co_new = co[co["_is_single_day"] & ~co["_in_han2"]]
+    co_new = co[co["_is_single_day"] & ~co["_in_han2"]].reset_index(drop=True)
     new_rows = pd.DataFrame(
         {
             "subject_id": co_new["subject_id"].to_numpy(),
@@ -372,6 +372,7 @@ def _merge_han_and_co(df_han, df_co, verbose=True):  # noqa: C901
     )
     if len(new_rows):
         new_rows["_session_id"] = _compute_session_id(new_rows)
+        _fill_co_only_metadata(new_rows, co_new)
 
     # --- Skipped multi-session CO sessions (logged, not used) ---
     multi = co[~co["_is_single_day"]].copy()
@@ -403,6 +404,39 @@ def _merge_han_and_co(df_han, df_co, verbose=True):  # noqa: C901
         )
 
     return df_union, df_skipped
+
+
+def _fill_co_only_metadata(new_rows, co_new):
+    """
+    Surface descriptive metadata for CO-only sessions (those absent from Han).
+
+    ``task`` / ``curriculum_in_use`` / ``stage_in_use`` come from the docDB task-GUI
+    parameters; ``institute`` / ``hardware`` / ``rig_type`` / ``room`` / ``data_source``
+    are derived (CO assets are AIND bonsai-harp sessions; room and rig_type come from
+    ``rig_id`` and ``modality``). Behavior metrics are deliberately NOT filled — those
+    are recomputed in a separate metrics database. Mutates ``new_rows`` in place.
+    """
+    def _col(name):
+        """Return the named co_new column, or an all-NA Series if it's absent."""
+        return co_new[name] if name in co_new.columns else pd.Series([pd.NA] * len(co_new))
+
+    task = _col("co_task")
+    if "co_session_type" in co_new.columns:
+        task = task.fillna(co_new["co_session_type"])
+    rig_id = _col("co_rig_id").fillna("").astype(str)
+    room = rig_id.str.extract(r"^(\d+)")[0].fillna("NA")  # leading room number (rig_id seps vary)
+    modality = _col("co_modality").fillna("").astype(str)
+    rig_type = modality.map(lambda m: "ephys" if "ephys" in m else "training")
+
+    new_rows["task"] = task.to_numpy()
+    new_rows["curriculum_in_use"] = _col("curriculum_in_use").to_numpy()
+    new_rows["stage_in_use"] = _col("stage_in_use").to_numpy()
+    new_rows["institute"] = "AIND"
+    new_rows["hardware"] = "bonsai"
+    new_rows["rig_type"] = rig_type.to_numpy()
+    new_rows["room"] = room.to_numpy()
+    new_rows["rig"] = rig_id.replace("", pd.NA).to_numpy()
+    new_rows["data_source"] = ("AIND_" + rig_type + "_" + room + "_bonsai").to_numpy()
 
 
 def build_session_table(  # noqa: C901
