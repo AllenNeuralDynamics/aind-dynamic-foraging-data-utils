@@ -56,6 +56,7 @@ class Config:
     limit: Optional[int] = None  # cap sessions for a quick test (random subset)
     full_rebuild: bool = False  # ignore build metadata; reprocess everything
     random_seed: int = 42
+    n_workers: Optional[int] = None  # worker processes; None -> CO_CPUS-1
 
     @property
     def is_s3(self) -> bool:
@@ -83,32 +84,72 @@ class Config:
 # ---------------------------------------------------------------------------
 
 
-def build_session_table(cfg: Config):
-    """Build the full session table (all sessions, enriched with CO assets)."""
-    _banner("Building session table (Han + docDB CO assets)")
+def build_session_pool(cfg: Config):
+    """
+    Build the Han session table WITHOUT CO assets — fast (no docDB / no S3).
+
+    This is the pool we sample from. CO-asset enrichment (the slow docDB + S3
+    step) is deliberately deferred until after sampling, so a --limit run only
+    pays that cost for the sampled sessions.
+    """
+    _banner("Building session pool (Han metadata only — no CO assets yet)")
     return parquet_builder.build_session_table(
         output_path=cfg.session_out,
-        include_co_assets=True,
+        include_co_assets=False,
         incremental=not cfg.full_rebuild,
         verbose=True,
     )
 
 
+def select_sessions(cfg: Config, session_df):
+    """
+    Pick the sessions to build EARLY, from Han metadata, before any AIND/CO work.
+
+    Full pool unless --limit N is given, in which case a random N-session subset
+    (seeded) — which still spans CO / bonsai / bpod routes.
+    """
+    if cfg.limit is None or len(session_df) <= cfg.limit:
+        return session_df
+    sampled = session_df.sample(n=cfg.limit, random_state=cfg.random_seed)
+    print(f"  --limit: randomly sampled {len(sampled)} of {len(session_df)} sessions (early)")
+    return sampled.reset_index(drop=True)
+
+
+def enrich_selected(cfg: Config, session_df):
+    """
+    Enrich ONLY the selected sessions with CO assets (docDB + S3 location).
+
+    Reuses the builder internals so the slow S3 globbing touches only the
+    sampled sessions, then rewrites the session table with the CO columns.
+    """
+    _banner(f"Enriching {len(session_df)} selected sessions with CO assets (docDB + S3)")
+    subjects = sorted(session_df["subject_id"].astype(str).unique().tolist())
+    print(f"  Unique subjects in selection: {len(subjects)}")
+
+    session_df = parquet_builder._enrich_with_co_assets(session_df, subjects, verbose=True)
+    # Refresh the preferred NWB source now that CO assets are populated.
+    session_df["nwb_data_source"] = session_df.apply(
+        parquet_builder._assign_nwb_data_source, axis=1
+    )
+    # Rewrite the session table so it reflects only the (enriched) selection.
+    parquet_builder._write_dataframe_as_parquet(session_df, cfg.session_out)
+
+    has_co = session_df["co_s3_nwb_uri"].notna() & (session_df["co_s3_nwb_uri"] != "")
+    print(f"  With CO asset : {has_co.sum()}   Local only : {(~has_co).sum()}")
+    return session_df
+
+
 def build_trial_event_tables(cfg: Config, session_df, nwb_index: dict) -> dict:
-    """Build the Hive-partitioned trial + event tables for every session."""
+    """Build the Hive-partitioned trial + event tables for the selected sessions."""
     _banner("Building trial and event tables")
-    df = session_df
-    if cfg.limit is not None and len(df) > cfg.limit:
-        # Random subset so a quick test still spans CO / bonsai / bpod routes.
-        df = df.sample(n=cfg.limit, random_state=cfg.random_seed)
-        print(f"  --limit: randomly sampled {len(df)} of {len(session_df)} sessions")
     return parquet_builder.build_trial_and_event_tables(
-        session_df=df,
+        session_df=session_df,
         trial_output_prefix=cfg.trial_out,
         event_output_prefix=cfg.event_out,
         nwb_file_index=nwb_index,
         build_metadata_path=cfg.meta_out,
         incremental=not cfg.full_rebuild,
+        n_workers=cfg.n_workers,
         verbose=True,
     )
 
@@ -216,7 +257,12 @@ def main(cfg: Config) -> dict:
     nwb_index = parquet_builder.build_nwb_file_index()
     print(f"  Total NWB files indexed: {len(nwb_index)}")
 
-    session_df = build_session_table(cfg)
+    # Sample EARLY from Han metadata, BEFORE any docDB/S3 (CO-asset) work, so a
+    # --limit run only enriches + S3-globs the sampled sessions.
+    session_df = build_session_pool(cfg)
+    session_df = select_sessions(cfg, session_df)
+    session_df = enrich_selected(cfg, session_df)
+
     summary = build_trial_event_tables(cfg, session_df, nwb_index)
     print_summary(cfg, summary)
     run_example_queries(cfg)
@@ -233,8 +279,17 @@ def parse_args(argv=None) -> Config:
                    help="cap to a random N-session subset for a quick test (default: all)")
     p.add_argument("--full-rebuild", action="store_true",
                    help="ignore build metadata and reprocess every session")
+    p.add_argument("--n-workers", type=int, default=None,
+                   help="worker processes (default: CO_CPUS-1). CO-asset reads are "
+                        "I/O-bound, so oversubscribing past CPU count (e.g. 32-48) "
+                        "overlaps S3 latency; watch RAM (~1 NWB loaded per worker).")
     args = p.parse_args(argv)
-    return Config(out_dir=args.out_dir, limit=args.limit, full_rebuild=args.full_rebuild)
+    return Config(
+        out_dir=args.out_dir,
+        limit=args.limit,
+        full_rebuild=args.full_rebuild,
+        n_workers=args.n_workers,
+    )
 
 
 def _banner(title: str) -> None:
