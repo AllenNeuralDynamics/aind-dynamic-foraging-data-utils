@@ -21,9 +21,9 @@ Run:
     # incremental local build (default scratch dir)
     python -m aind_dynamic_foraging_data_utils.foraging_cache.sample_cache_trigger
 
-    # production build/update on S3
+    # production build/update on S3 (--n-workers 64 ~= 4x faster; see --help)
     python -m aind_dynamic_foraging_data_utils.foraging_cache.sample_cache_trigger \\
-        --out-dir s3://aind-behavior-data/foraging_cache
+        --out-dir s3://aind-behavior-data/foraging_cache --n-workers 64
 
     # quick smoke test on a random 300-session subset (spans all three routes)
     python -m aind_dynamic_foraging_data_utils.foraging_cache.sample_cache_trigger --limit 300
@@ -281,8 +281,11 @@ def parse_args(argv=None) -> Config:
                    help="ignore build metadata and reprocess every session")
     p.add_argument("--n-workers", type=int, default=None,
                    help="worker processes (default: CO_CPUS-1). CO-asset reads are "
-                        "I/O-bound, so oversubscribing past CPU count (e.g. 32-48) "
-                        "overlaps S3 latency; watch RAM (~1 NWB loaded per worker).")
+                        "I/O-bound, so oversubscribing past CPU count overlaps S3 "
+                        "latency. Recommended ~64 on a 16-core box: ~4x faster than "
+                        "the default, and beyond ~64 there's no gain (the "
+                        "create_df_trials parse saturates the cores). RAM is not "
+                        "the limit (~21 GB at 128 workers).")
     args = p.parse_args(argv)
     return Config(
         out_dir=args.out_dir,
