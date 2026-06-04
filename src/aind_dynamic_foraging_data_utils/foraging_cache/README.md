@@ -9,7 +9,9 @@ of opening thousands of NWBs.
 > whole file into the LLM of your choice (Claude / ChatGPT / Cursor / …) as context, then ask
 > in plain English (e.g. *"trials for subjects 754372 and 758435 with foraging_eff > 0.8"*).
 > It will return runnable DuckDB that follows the conventions below — including the key
-> columns. See [**Use an LLM**](#use-an-llm-to-write-queries) for a copy-paste preamble.
+> columns. See [**Use an LLM**](#use-an-llm-to-write-queries) for a copy-paste preamble — or, with
+> a coding agent (Claude Code / Codex / OpenCode), load the `aind-dynamic-foraging-data-access`
+> skill in `.claude/skills/` instead.
 
 > 📊 **Prefer to browse the session metadata visually?** The interactive
 > [**foraging behavior browser**](https://foraging-behavior-browser.allenneuraldynamics.org/)
@@ -358,6 +360,12 @@ Paste this README into your LLM as context, prefixed with something like:
 > Return a single runnable `duckdb.sql(...).df()` snippet. Schema and conventions follow:*
 
 Then ask your question in plain English.
+
+**Using a coding agent** (Claude Code, Codex, OpenCode, …)? This repo ships an
+**`aind-dynamic-foraging-data-access`** skill (in `.claude/skills/`) with exactly this context.
+With Claude Code it loads automatically when you work in the repo; for other agents, point them
+at `.claude/skills/aind-dynamic-foraging-data-access/SKILL.md`. Then just ask for the data you
+want — no need to paste this README.
 
 ---
 
