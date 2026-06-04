@@ -193,6 +193,72 @@ def get_assets(  # NOQA: C901
     return results_no_duplicates.reset_index(drop=True)
 
 
+def get_dynamic_foraging_assets(pagination=True, paginate_batch_size=5000, projection=None):
+    """
+    Return ALL processed dynamic-foraging sessions known to docDB — the complete
+    Code Ocean universe.
+
+    Unlike get_assets() (which filters by session.session_type regex and a subject
+    list), this filters on the task *software name* ("dynamic-foraging-task"), which
+    is the reliable signal for "is this a dynamic-foraging session". It catches
+    sessions that exist on Code Ocean but are missing from Han's pipeline session
+    table (~1k recent sessions as of 2026-06).
+
+    Uses server-side pagination (paginate / paginate_batch_size, default 5000),
+    following foraging-behavior-browser/code/util/fetch_data_docDB.py, so the large
+    (~19k-record) result set is retrieved reliably rather than in one huge response.
+
+    Returns a DataFrame (deduplicated to the latest processed asset per session)
+    with columns: name, session_name, location, code_ocean_asset_id, subject_id.
+    """
+    client = MetadataDbClient(
+        host="api.allenneuraldynamics.org", database="metadata_index", collection="data_assets"
+    )
+    filter_query = {
+        "$or": [
+            {"session.data_streams.software.name": "dynamic-foraging-task"},
+            {"session.stimulus_epochs.software.name": "dynamic-foraging-task"},
+        ],
+        "name": {"$regex": ".*processed.*"},
+    }
+    if projection is None:
+        projection = {
+            "_id": 0,
+            "name": 1,
+            "location": 1,
+            "external_links": 1,
+            "subject.subject_id": 1,
+        }
+
+    records = client.retrieve_docdb_records(
+        filter_query=filter_query,
+        projection=projection,
+        paginate=pagination,
+        paginate_batch_size=paginate_batch_size,
+    )
+    if not records:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(records)
+
+    # Dedup to the latest processed asset per session (mirror get_assets()).
+    df["session_name"] = [n.split("_processed")[0] for n in df["name"]]
+    df = df.sort_values("name").drop_duplicates(subset="session_name", keep="last").copy()
+
+    # Code Ocean asset id from external_links: {"Code Ocean": ["<asset-id>"]}.
+    df["code_ocean_asset_id"] = [
+        link["Code Ocean"][0] if isinstance(link, dict) and "Code Ocean" in link else ""
+        for link in df["external_links"]
+    ]
+    # Flatten the nested subject.subject_id projection.
+    if "subject" in df.columns:
+        df["subject_id"] = [
+            s.get("subject_id") if isinstance(s, dict) else None for s in df["subject"]
+        ]
+
+    return df.reset_index(drop=True)
+
+
 def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
     """
     generate_data_asset_attach_params is a helper function for attach_data
