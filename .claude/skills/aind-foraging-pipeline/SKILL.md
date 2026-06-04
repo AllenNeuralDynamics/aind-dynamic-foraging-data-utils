@@ -17,15 +17,22 @@ description: >
 
 ```
 src/aind_dynamic_foraging_data_utils/
-├── nwb_utils.py          # NWB readers: load_nwb_from_filename, create_df_trials,
+├── nwb_utils.py          # AIND NWB readers: load_nwb_from_filename, create_df_trials,
 │                         #   create_df_events, create_df_fip, create_df_session
 ├── code_ocean_utils.py   # CO/docDB API: get_assets, attach_data, add_s3_location,
 │                         #   get_foraging_model_info (calls han_pipeline.get_mle_model_fitting)
 ├── enrich_dfs.py         # FIP enrichment: enrich_fip_in_df_trials, zscore_fip
 ├── alignment.py          # Event-triggered analysis: event_triggered_response
-├── parquet_builder.py    # [PLANNED] builds/updates s3://foraging_cache/ parquet tables
-└── cache_utils.py        # [PLANNED] query API: get_session_table, get_trial_table, get_event_table
+└── foraging_cache/       # parquet cache builder sub-package
+    ├── parquet_builder.py    # core builder: NWB→parquet, reader routing, CO enrich, coalesce
+    ├── build_cache.py        # MAIN build entry point: `python -m ...build_cache` (build/update DB)
+    ├── query_examples.py     # read-back "return loop": DuckDB query patterns (local or s3://)
+    ├── query_examples.ipynb  # DuckDB query notebook
+    ├── nwb_reader_aind.py     # AIND reader wrapper (raises AINDReaderQualityError)
+    └── nwb_reader_legacy.py   # legacy bonsai/bpod reader (+ h5py fallback for old bpod)
 ```
+Note: there is no `cache_utils.py` — query the parquet cache directly with DuckDB
+(`read_parquet(..., hive_partitioning=true, union_by_name=true)`); see `query_examples.py`.
 
 ## Data Sources
 
@@ -66,11 +73,12 @@ Canonical key: `(subject_id, session_date, nwb_suffix)` as a 3-tuple.
 
 See `references/parquet-api.md` for full schema and query API design.
 
-**S3 location**: `s3://aind-behavior-data/foraging_cache/`
+**S3 location**: `s3://aind-scratch-data/aind-dynamic-foraging-cache/`
 - `session_table.parquet` — one row per session, merged docDB + han_pipeline metadata
-- `trial_table/subject_id=<id>/` — partitioned; AIND minimal schema + `data_source` column
-- `event_table/subject_id=<id>/` — partitioned; tidy events
+- `trial_table/subject_id=<id>/<subject_id>.parquet` — Hive-partitioned; coalesced one file per subject (default)
+- `event_table/subject_id=<id>/<subject_id>.parquet` — Hive-partitioned; coalesced one file per subject
 - `build_metadata.json` — tracks processed session IDs for incremental updates
+- `processing_log.csv` — human-readable per-session triage log
 
 **Canonical trial schema** (AIND minimal): `session_id`, `subject_id`, `session_date`, `trial`, `animal_response`, `goCue_start_time_in_session`, `choice_time_in_session`, `reward_time_in_session`, `rewarded_historyL`, `rewarded_historyR`, `earned_reward`, `data_source`
 
@@ -78,5 +86,5 @@ See `references/parquet-api.md` for full schema and query API design.
 
 - **Bonsai-basic pipeline** (`aind-foraging-behavior-bonsai-basic`): CO capsule that reads raw NWBs from bonsai S3, runs `compute_df_trial()` + `compute_df_session_meta/performance()`, saves per-session pkl to `foraging_nwb_bonsai_processed/`
 - **`df_sessions.pkl`**: Aggregated session table in `foraging_nwb_bonsai_processed/` root, read by `get_session_table()`
-- **Note**: Per-session pkl files in `bonsai_processed/` are **incomplete** (pipeline no longer actively updated) → must read raw NWBs for trial data
+- **Note**: Per-session pkl files in `bonsai_processed/` are **incomplete** (still produced, but the pipeline is slated for shutdown and never captured some sessions) → must read raw NWBs for trial data
 - **Column mapping** (Han `compute_df_trial()` → AIND canonical): `reward_non_autowater` → `earned_reward`; `goCue_start_time` → subtract t0 for `_in_session` variant
