@@ -768,9 +768,11 @@ def _read_session_with_fallback(nwb_path, nwb_data_source, session_id, legacy_fa
     designed for AIND-pipeline CO-asset NWBs and is used ONLY for those. Han
     bonsai/bpod NWBs are read with the legacy reader directly.
 
-      - co_asset  : AIND reader on the CO-asset S3 URI. On AINDReaderQualityError
-                    (e.g. post-2025 "Reward before choice time"), log a warning
-                    and fall back to the legacy reader on the local Han NWB
+      - co_asset  : AIND reader on the CO-asset S3 URI. On ANY error that breaks
+                    the AIND reader — quality assertions (AINDReaderQualityError,
+                    e.g. post-2025 "Reward before choice time") as well as
+                    TypeErrors / parse / S3 failures — log the reason and fall
+                    back to the legacy reader on the local Han NWB
                     (legacy_fallback_path), if available.
       - bonsai_s3 : legacy reader directly.
       - bpod_s3   : legacy reader directly (pynwb also crashes on many old bpod
@@ -816,14 +818,25 @@ def _read_session_with_fallback(nwb_path, nwb_data_source, session_id, legacy_fa
             nwb_reader_aind.read_events(nwb_path),
             "aind",
         )
-    except AINDReaderQualityError as exc:
+    except Exception as exc:
+        # Fall back on ANY AIND-reader breakage: quality assertions
+        # (AINDReaderQualityError) as well as TypeErrors, parse/S3 errors, etc.
+        # Distinguish the kind in the log so quality rejections stay visible.
+        kind = "quality" if isinstance(exc, AINDReaderQualityError) else type(exc).__name__
+        if legacy_fallback_path is None:
+            logger.warning(
+                "AIND reader failed for %s (%s): %s -- no local Han NWB to fall back to",
+                session_id,
+                kind,
+                exc,
+            )
+            raise
         logger.warning(
-            "AIND reader quality error for %s: %s  -- falling back to legacy reader",
+            "AIND reader failed for %s (%s): %s -- falling back to legacy reader",
             session_id,
+            kind,
             exc,
         )
-        if legacy_fallback_path is None:
-            raise
         return (
             nwb_reader_legacy.read_trials(legacy_fallback_path),
             nwb_reader_legacy.read_events(legacy_fallback_path),
