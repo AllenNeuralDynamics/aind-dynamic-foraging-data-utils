@@ -29,30 +29,60 @@ RESPONSE_TIMING_TOLERANCE = 0.005
 CHOICE_TIMING_TOLERANCE = 0.005
 
 
-def load_nwb_from_filename(filename):
+def _resolve_backend(backend):
+    """
+    Resolve a requested reader backend to a concrete one.
+
+    "auto" selects the fast "direct" reader (h5py for HDF5, zarr for Zarr), which needs
+    no extra dependency and produces output identical to "pynwb".
+    """
+    if backend == "auto":
+        return "direct"
+    if backend not in ("pynwb", "direct"):
+        raise ValueError(
+            f"Unknown backend '{backend}'. Expected 'pynwb', 'direct', or 'auto'."
+        )
+    return backend
+
+
+def load_nwb_from_filename(filename, backend="pynwb"):
     """
     Load NWB from file, checking for HDF5 or Zarr
     if filename is not a string, then return the input, assuming its the NWB file already
+
+    backend (str), the reader to use when ``filename`` is a path:
+        "pynwb"  - eager pynwb / hdmf_zarr reader (default; returns a full NWBFile)
+        "direct" - read directly from the store with h5py (HDF5) or
+                   ``zarr.open_consolidated`` (Zarr), skipping pynwb's object-graph
+                   construction (and any FIP data not requested). Much faster,
+                   especially over S3. Returns a ``DirectNWBAdapter`` exposing the
+                   subset of the NWBFile API used by this module.
+        "auto"   - use the "direct" reader.
     """
 
-    if type(filename) is str:
-        if (
-            os.path.isdir(filename)
-            or (filename.startswith("s3://") and filename.endswith(".nwb"))
-            or (filename.startswith("s3://") and filename.endswith(".nwb.zarr"))
-        ):
-            io = NWBZarrIO(filename, mode="r")
-            nwb = io.read()
-            return nwb
-        elif os.path.isfile(filename):
-            io = NWBHDF5IO(filename, mode="r")
-            nwb = io.read()
-            return nwb
-        else:
-            raise FileNotFoundError(filename)
-    else:
-        # Assuming its already an NWB
+    # An already-loaded NWB (or adapter) is returned untouched, regardless of backend.
+    if type(filename) is not str:
         return filename
+
+    if _resolve_backend(backend) == "direct":
+        from ._direct_nwb import load_direct_nwb
+
+        return load_direct_nwb(filename)
+
+    if (
+        os.path.isdir(filename)
+        or (filename.startswith("s3://") and filename.endswith(".nwb"))
+        or (filename.startswith("s3://") and filename.endswith(".nwb.zarr"))
+    ):
+        io = NWBZarrIO(filename, mode="r")
+        nwb = io.read()
+        return nwb
+    elif os.path.isfile(filename):
+        io = NWBHDF5IO(filename, mode="r")
+        nwb = io.read()
+        return nwb
+    else:
+        raise FileNotFoundError(filename)
 
 
 def create_single_df_session_inner(nwb):
@@ -277,27 +307,30 @@ def create_single_df_session_inner(nwb):
     return df_session
 
 
-def create_df_session(nwb_filename):
+def create_df_session(nwb_filename, backend="auto"):
     """
     Creates a dataframe where each row is a session
     nwb_filename can be either a single nwb file, a single filepath
     or a list of nwb files, or a list of nwb filepaths
+
+    backend (str), reader backend passed to ``load_nwb_from_filename`` ("auto" by
+        default, which uses the faster direct h5py/zarr reader).
     """
     if (type(nwb_filename) is not str) and (hasattr(nwb_filename, "__iter__")):
         dfs = []
         for nwb_file in nwb_filename:
-            dfs.append(create_single_df_session(nwb_file))
+            dfs.append(create_single_df_session(nwb_file, backend=backend))
         return pd.concat(dfs)
     else:
-        return create_single_df_session(nwb_filename)
+        return create_single_df_session(nwb_filename, backend=backend)
 
 
 # % Process nwb and create df_session for every single session
-def create_single_df_session(nwb_filename):
+def create_single_df_session(nwb_filename, backend="auto"):
     """
     create a dataframe for a single session
     """
-    nwb = load_nwb_from_filename(nwb_filename)
+    nwb = load_nwb_from_filename(nwb_filename, backend=backend)
 
     df_session = create_single_df_session_inner(nwb)
 
@@ -310,13 +343,15 @@ def create_single_df_session(nwb_filename):
     return df_session
 
 
-def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
+def create_df_trials(nwb_filename, adjust_time=True, verbose=True, backend="auto"):  # NOQA C901
     """
     Process nwb and create df_trials for every single session
 
     ARGS:
     nwb_filename (str or NWB object), the session to extract the trials from
     adjust_time (bool) if true, adjust t0 to be the first gocue
+    backend (str) reader backend passed to ``load_nwb_from_filename`` ("auto" by
+        default, which uses the faster direct h5py/zarr reader)
 
     RETURNS:
     A pandas dataframe containing the columns of nwb.trials plus:
@@ -328,7 +363,7 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     """
 
     # If we are given a filename, load the NWB object itself
-    nwb = load_nwb_from_filename(nwb_filename)
+    nwb = load_nwb_from_filename(nwb_filename, backend=backend)
 
     # Parse subject and session_date
     if nwb.session_id.startswith("behavior") or nwb.session_id.startswith("FIP"):
@@ -569,7 +604,9 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     return df
 
 
-def create_df_events(nwb_filename, adjust_time=True, verbose=True, ignore=["sniff_detector"]):
+def create_df_events(
+    nwb_filename, adjust_time=True, verbose=True, ignore=["sniff_detector"], backend="auto"
+):
     """
     returns a tidy dataframe of the events in the nwb file
 
@@ -578,9 +615,11 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True, ignore=["snif
     ignore (List), event fields to ignore in dataframe creation
         Useful if e.g. continuous data in events.
         FIP data will always be ignored.
+    backend (str), reader backend passed to ``load_nwb_from_filename`` ("auto" by
+        default, which uses the faster direct h5py/zarr reader).
     """
 
-    nwb = load_nwb_from_filename(nwb_filename)
+    nwb = load_nwb_from_filename(nwb_filename, backend=backend)
 
     # Build list of all event types in acqusition, ignore FIP events (no need for processing folder)
     event_types = set(nwb.acquisition.keys())
@@ -663,16 +702,18 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True, ignore=["snif
     return df
 
 
-def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True):
+def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True, backend="auto"):
     """
     returns a dataframe of the FIB data in the nwb file
     if tidy, return a tidy dataframe
     if not tidy, return pivoted by timestamp
 
     adjust_time (bool), set time of first goCue to t=0
-    """
+    backend (str), reader backend passed to ``load_nwb_from_filename`` ("auto" by
+        default, which uses the faster direct h5py/zarr reader).
+c    """
 
-    nwb = load_nwb_from_filename(nwb_filename)
+    nwb = load_nwb_from_filename(nwb_filename, backend=backend)
 
     # Build list of all FIB events in NWB file
     nwb_data = nwb.acquisition
