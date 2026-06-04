@@ -96,17 +96,16 @@ results = get_assets(
 
 ---
 
-## Data Source Priority for Parquet Builder
+## Which source each session's data comes from
 
-```
-For each session:
-  1. Has CO asset? → nwb_utils.create_df_trials() [AIND canonical schema]
-  2. In bonsai S3? → compute_df_trial() + normalize to AIND schema
-  3. In bpod S3?  → compute_df_trial() + normalize to AIND schema
-  4. None found   → log as missing, skip
-```
+Each session in the cache is read from a single source (priority: CO asset > bonsai > bpod),
+recorded in the **`nwb_data_source`** column of every trial/event/session row:
+  1. CO asset present  → `"co_asset"`  (AIND reader, `nwb_utils.create_df_trials`)
+  2. else bonsai S3 NWB → `"bonsai_s3"` (legacy Han reader)
+  3. else bpod S3 NWB   → `"bpod_s3"`   (legacy Han reader)
 
-Record `data_source` column in every row: `"co_asset"`, `"bonsai_s3"`, or `"bpod_s3"`.
+NB `nwb_data_source` (the read *route*) is distinct from the Han **`data_source`** column (the
+rig/institute composite, e.g. `AIND_training_447_bonsai`). See `parquet-api.md`.
 
 ---
 
