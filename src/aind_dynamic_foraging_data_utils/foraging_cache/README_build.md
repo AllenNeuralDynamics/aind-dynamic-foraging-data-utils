@@ -206,7 +206,7 @@ repeated, re-sampled draws) against the TRUE legacy CO chain run serially —
 | full 103-col trials | **~53 s** | ~23 s/session → ~6 days |
 | trials + events | ~64 s (at 10k) | ~27 s/session |
 
-→ the cache is **~4 orders of magnitude faster**; it eliminates the per-session docDB query
+→ the cache is **~10,000× faster**; it eliminates the per-session docDB query
 that dominates the legacy route.
 
 ![Cache vs legacy fetch time](validate/cache_vs_legacy.png)

@@ -334,7 +334,7 @@ chain with a single parquet scan:
 | Full DB (~23.6k), 5-col | **~6 s** | **~6 days** |
 | Full DB, full 103-col | **~53 s** | ~6 days |
 
-→ **~4 orders of magnitude faster** at full-dataset scale, verified equivalent to a direct
+→ **~10,000× faster** at full-dataset scale, verified equivalent to a direct
 `nwb_utils` read (33/33 sessions exact-match — see `README_build.md`). Solid = cache (measured),
 dashed = legacy `nwb_utils` (per-session cost, extrapolated):
 
