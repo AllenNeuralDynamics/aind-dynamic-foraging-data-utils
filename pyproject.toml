@@ -67,7 +67,22 @@ exclude = '''
 '''
 
 [tool.coverage.run]
-omit = ["*__init__*"]
+# Omit modules that require external resources and so can't be unit-tested in CI:
+# S3 / docDB / NWB-file reads, and the parquet build (much of which runs in worker
+# subprocesses that coverage doesn't trace). The pure-computation (alignment) and
+# post-processing (postprocess) code stays measured.
+omit = [
+    "*__init__*",
+    "*/nwb_utils.py",
+    "*/code_ocean_utils.py",
+    "*/enrich_dfs.py",
+    "*/foraging_cache/build_cache.py",
+    "*/foraging_cache/query_examples.py",
+    "*/foraging_cache/util/parquet_builder.py",
+    "*/foraging_cache/util/nwb_reader_aind.py",
+    "*/foraging_cache/util/nwb_reader_legacy.py",
+    "*/foraging_cache/validate/*",
+]
 source = ["aind_dynamic_foraging_data_utils", "tests"]
 
 [tool.coverage.report]

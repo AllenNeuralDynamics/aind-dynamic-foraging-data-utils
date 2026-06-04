@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from src.aind_dynamic_foraging_data_utils import alignment, nwb_utils
+from aind_dynamic_foraging_data_utils import alignment, nwb_utils
 
 
 class DynamicForagingTest(unittest.TestCase):
