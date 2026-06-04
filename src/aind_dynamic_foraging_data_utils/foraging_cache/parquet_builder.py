@@ -42,6 +42,7 @@ import json
 import logging
 import os
 import re
+import time
 import warnings
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
@@ -324,6 +325,36 @@ def _add_s3_location_parallel(df, n_workers=100, verbose=True):
     return df
 
 
+def _get_assets_with_retry(chunk, max_retries=4, base_delay=2):
+    """
+    Call get_assets() for one subject chunk, retrying transient docDB errors.
+
+    docDB (api.allenneuraldynamics.org) intermittently returns 503 Service
+    Unavailable under load. Without retries a single 503 in any chunk aborts the
+    whole enrichment (leaving every session with no CO asset). Here we retry with
+    exponential backoff and, if a chunk still fails, return None so the caller can
+    skip just those subjects — they get picked up on the next incremental run via
+    recheck_missing_co.
+    """
+    from aind_dynamic_foraging_data_utils.code_ocean_utils import get_assets
+
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            return get_assets(subjects=chunk, processed=True, modality=["behavior"])
+        except Exception as e:  # transient docDB errors (503, timeouts, ...)
+            last_exc = e
+            if attempt < max_retries - 1:
+                time.sleep(base_delay * (2**attempt))
+    logger.warning(
+        "docDB query failed for %d subjects after %d retries (skipped this run): %s",
+        len(chunk),
+        max_retries,
+        last_exc,
+    )
+    return None
+
+
 def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):  # noqa: C901
     """Query docDB for CO assets for the given subject_ids and merge onto df_sessions.
 
@@ -348,8 +379,6 @@ def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):  # noqa: C90
             print("  No subjects to query for CO assets — skipping.")
         return df_sessions
 
-    from aind_dynamic_foraging_data_utils.code_ocean_utils import get_assets
-
     if verbose:
         print(f"  Querying docDB for CO assets (subjects={len(subject_ids)})...")
 
@@ -368,8 +397,7 @@ def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):  # noqa: C90
     co_frames = []
     with ThreadPoolExecutor(max_workers=n_threads) as pool:
         futures = {
-            pool.submit(get_assets, subjects=chunk, processed=True, modality=["behavior"]): i
-            for i, chunk in enumerate(chunks)
+            pool.submit(_get_assets_with_retry, chunk): i for i, chunk in enumerate(chunks)
         }
         for n_done, future in enumerate(as_completed(futures), 1):
             result = future.result()
