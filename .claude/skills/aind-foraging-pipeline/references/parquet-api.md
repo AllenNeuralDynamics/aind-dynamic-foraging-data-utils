@@ -38,8 +38,7 @@ One row per session. Primary key: `session_id = f"{subject_id}_{session_date}_{n
 **Added by builder**:
 - `session_id` (str): `f"{subject_id}_{session_date}_{nwb_suffix}"`
 - `data_source` (str): `"co_asset"`, `"bonsai_s3"`, `"bpod_s3"` — where trial data comes from
-- `metadata_source` (str): `"han_pipeline"` or `"docdb_only"` (for bad Bowen sessions)
-- `is_bad_bowen_session` (bool): True for sessions on the known-bad list
+- `metadata_source` (str): `"han_pipeline"` or `"docdb_only"` (CO-only sessions absent from Han)
 - `has_co_asset` (bool): True if session has a CO asset
 
 **From `get_assets()` (supplement, CO sessions only)**:
@@ -92,7 +91,7 @@ One row per event. Partitioned by `subject_id`.
 
 ### Session Table Build (full rebuild each run)
 ```python
-def build_session_table(bad_bowen_sessions: list[str]) -> None:
+def build_session_table() -> None:
     # Primary: han_pipeline
     df_han = get_session_table(if_load_bpod=True)
     df_han["session_id"] = df_han.apply(
@@ -106,7 +105,6 @@ def build_session_table(bad_bowen_sessions: list[str]) -> None:
     # Join: left join on session_id
     df = df_han.merge(df_co[["session_id", "code_ocean_asset_id", "has_co_asset"]],
                       on="session_id", how="left")
-    df["is_bad_bowen_session"] = df["session_id"].isin(bad_bowen_sessions)
     df["metadata_source"] = "han_pipeline"
 
     df.to_parquet("s3://aind-behavior-data/foraging_cache/session_table.parquet")
@@ -176,7 +174,6 @@ CACHE_BASE = "s3://aind-behavior-data/foraging_cache/"
 
 def get_session_table(
     subjects: list = None,
-    exclude_bad_bowen: bool = True,
     task: str = None,
     **kwargs
 ) -> pd.DataFrame:
@@ -184,8 +181,6 @@ def get_session_table(
     df = pd.read_parquet(CACHE_BASE + "session_table.parquet")
     if subjects:
         df = df[df.subject_id.isin(subjects)]
-    if exclude_bad_bowen:
-        df = df[~df.is_bad_bowen_session]
     return df
 
 def get_trial_table(

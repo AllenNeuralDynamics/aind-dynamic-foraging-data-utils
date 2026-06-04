@@ -122,7 +122,6 @@ joining to trials/events. The columns you'll filter on most:
 | **Behavior task** | `task` | `Uncoupled Baiting`, `Coupled Baiting`, `Uncoupled Without Baiting`, `Coupled Without Baiting` → `task LIKE '%Uncoupled%'` |
 | **Curriculum** | `curriculum_name`, `curriculum_version` | e.g. `Uncoupled Baiting` / `'2.3'`; **`'None'` = off-curriculum** → `curriculum_name <> 'None'` for on-curriculum only |
 | **Performance metrics** | `finished_trials`, `finished_rate`, `foraging_eff`, `total_trials`, `reward_trials`, `bias_naive`, … | combine freely: `foraging_eff > 0.8 AND finished_trials > 200 AND finished_rate > 0.7` |
-| **Quality** | `is_bad_bowen_session` | `NOT is_bad_bowen_session` |
 
 > 💡 **Use `institute` / `hardware` / `rig_type` for high-level grouping** (clean values:
 > `AIND`/`Janelia`, `bonsai`/`bpod`, `training`/`ephys`). `data_source` is their fine-grained
@@ -176,7 +175,6 @@ duckdb.sql(f"DESCRIBE SELECT * FROM {READ_EVENTS}").df()                        
 | `weight_after`, `water_in_session_total` | DOUBLE | weight / water |
 | `logistic_*`, `abs(*_bias)` | DOUBLE | fitted logistic-regression model coefficients |
 | `nwb_data_source` | VARCHAR | `co_asset` \| `bonsai_s3` \| `bpod_s3` — which NWB the cache built the row from (not a science filter) |
-| `is_bad_bowen_session` | BOOLEAN | unreliable bonsai data (usually filter out) |
 | `co_asset_id`, `co_s3_nwb_uri` | VARCHAR | Code Ocean asset id / NWB URI (NULL if none) |
 
 ### trial table (key columns; 103 total)
@@ -230,13 +228,12 @@ duckdb.sql(f"DESCRIBE SELECT * FROM {READ_EVENTS}").df()                        
 - **`animal_response`:** 0 = left, 1 = right, 2 = ignore.
 - **Performance:** *filter by `subject_id`* (prunes partitions) and *project only the columns
   you need*. `SELECT *` over trials is ~21 GB; the choice/reward 5-column slice is ~2 GB / ~6 s.
-- **`is_bad_bowen_session = TRUE`** marks unreliable bonsai data — usually exclude it.
 - **NULLs:** `union_by_name` fills reader-specific columns with `NULL`; numeric comparisons
   (`> 0.8`) drop NULL/NaN rows.
 - **⚠️ The ~381 CO-only sessions have NO Han metadata.** Sessions added from the Code Ocean
-  universe but absent from Han's pipeline (`nwb_data_source = 'co_asset'`) have **only 8 of 160
-  session columns populated** (`subject_id, session_date, nwb_suffix, _session_id, co_asset_id,
-  co_s3_nwb_uri, is_bad_bowen_session, nwb_data_source`); **all Han columns are NULL** (`task`,
+  universe but absent from Han's pipeline (`nwb_data_source = 'co_asset'`) have **only the
+  identity + CO columns populated** (`subject_id, session_date, nwb_suffix, _session_id,
+  co_asset_id, co_s3_nwb_uri, nwb_data_source`); **all Han columns are NULL** (`task`,
   `institute`, `hardware`, `curriculum_*`, `foraging_eff`, `finished_trials`, every metric). So
   **any filter on a Han column silently excludes them** (NULL fails every comparison — they
   "never return"). Their **trials/events are fully in the cache**, so reach them by
@@ -305,7 +302,6 @@ duckdb.sql(f"""
           AND task LIKE '%Uncoupled%'                     -- behavior task
           AND curriculum_name NOT IN ('None')             -- on-curriculum only
           AND foraging_eff > 0.8 AND finished_trials > 200 -- performance metrics
-          AND NOT is_bad_bowen_session
     )
     SELECT s.subject_id, s.session_date, t.session_id, t.trial,
            t.animal_response, t.earned_reward, t.reward_probabilityL, t.reward_probabilityR

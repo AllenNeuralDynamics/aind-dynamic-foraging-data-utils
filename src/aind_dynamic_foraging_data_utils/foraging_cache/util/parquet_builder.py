@@ -42,7 +42,6 @@ import json
 import logging
 import os
 import re
-import warnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import pandas as pd
@@ -73,9 +72,6 @@ BUILD_METADATA_S3_URI = f"s3://{S3_CACHE_BUCKET}/{S3_CACHE_PREFIX}/build_metadat
 # ---- Local NWB paths (when running inside Code Ocean) ----
 LOCAL_BONSAI_NWB_DIR = "/data/foraging_nwb_bonsai"
 LOCAL_BPOD_NWB_DIR = "/data/foraging_nwb_bpod"
-
-# ---- CSV with Bowen incomplete sessions (CO asset IDs) ----
-BOWEN_INCOMPLETE_CSV = "/data/Bowen_IncompleteSessions-081225.csv"
 
 # ---------------------------------------------------------------------------
 # Canonical trial-table column definitions
@@ -215,21 +211,6 @@ def build_nwb_file_index(
 
     logger.info("NWB file index built: %d sessions found", len(index))
     return index
-
-
-def _load_bowen_incomplete_sessions(csv_path=BOWEN_INCOMPLETE_CSV):
-    """
-    Load the set of CO asset IDs corresponding to Bowen's incomplete sessions.
-
-    Returns:
-        set: CO asset IDs (str). Empty set if the file is not found.
-    """
-    if not os.path.exists(csv_path):
-        warnings.warn(f"Bowen incomplete sessions CSV not found: {csv_path}")
-        return set()
-
-    df = pd.read_csv(csv_path, header=None, names=["co_asset_id"])
-    return set(df["co_asset_id"].str.strip())
 
 
 # ---------------------------------------------------------------------------
@@ -426,7 +407,6 @@ def _merge_han_and_co(df_han, df_co, verbose=True):  # noqa: C901
 
 def build_session_table(  # noqa: C901
     output_path=SESSION_TABLE_S3_URI,
-    bowen_csv_path=BOWEN_INCOMPLETE_CSV,
     include_co_assets=True,
     co_discovery=None,
     verbose=True,
@@ -451,7 +431,6 @@ def build_session_table(  # noqa: C901
       - co_asset_id          : CO data asset ID (str or NA)
       - co_s3_nwb_uri        : S3 URI of the NWB inside the CO asset (str or NA)
       - nwb_data_source      : "co_asset" | "bonsai_s3" | "bpod_s3"
-      - is_bad_bowen_session : bool
 
     Parameters
     ----------
@@ -459,8 +438,6 @@ def build_session_table(  # noqa: C901
         Where to write the parquet (local path or S3 URI). A companion
         ``co_skipped_sessions.csv`` (the skipped multi-session CO rows, issue #146)
         is written alongside it.
-    bowen_csv_path : str
-        Path to the Bowen incomplete-sessions CSV.
     include_co_assets : bool
         If False, skip the docDB discovery (Han-only table; co columns are NA).
     co_discovery : pd.DataFrame | None
@@ -511,17 +488,10 @@ def build_session_table(  # noqa: C901
         df_sessions["co_asset_id"] = pd.NA
         df_sessions["co_s3_nwb_uri"] = pd.NA
 
-    # ---- 7. Flag Bowen incomplete sessions (refresh on all rows) ----
-    bowen_bad_co_ids = _load_bowen_incomplete_sessions(bowen_csv_path)
-    df_sessions["is_bad_bowen_session"] = df_sessions["co_asset_id"].isin(bowen_bad_co_ids)
-
-    if verbose:
-        print(f"  Flagged {df_sessions['is_bad_bowen_session'].sum()} Bowen incomplete sessions")
-
-    # ---- 8. Assign preferred NWB data source per session (refresh on all rows) ----
+    # ---- 7. Assign preferred NWB data source per session (refresh on all rows) ----
     df_sessions["nwb_data_source"] = df_sessions.apply(_assign_nwb_data_source, axis=1)
 
-    # ---- 9. Write to parquet ----
+    # ---- 8. Write to parquet ----
     if verbose:
         print(f"Writing session table ({len(df_sessions)} rows) -> {output_path} ...")
 
@@ -601,7 +571,6 @@ def _process_single_session(row_dict):
 
     nwb_suffix = row_dict["nwb_suffix"]
     session_id = row_dict["_session_id"]
-    is_bad_bowen = bool(row_dict.get("is_bad_bowen_session", False))
     co_s3_uri = row_dict.get("co_s3_nwb_uri", None)
 
     # ---- Determine NWB source (priority: CO asset > bonsai > bpod) ----
@@ -620,7 +589,7 @@ def _process_single_session(row_dict):
         nwb_path = co_s3_uri
         nwb_data_source = "co_asset"
         legacy_fallback_path = local_nwb_path
-    elif not is_bad_bowen and local_nwb_path is not None:
+    elif local_nwb_path is not None:
         # No CO asset -> read the local Han NWB directly with the legacy reader.
         nwb_path = local_nwb_path
         nwb_data_source = (
@@ -644,7 +613,7 @@ def _process_single_session(row_dict):
             "nwb_path": None,
             "n_trials": 0,
             "n_events": 0,
-            "error": "no CO asset and no local NWB (bad-Bowen or missing file)",
+            "error": "no CO asset and no local NWB (missing file)",
         }
 
     # ---- Read NWB (AIND reader for CO assets, legacy reader for Han NWBs) ----

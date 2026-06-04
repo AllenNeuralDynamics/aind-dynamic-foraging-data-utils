@@ -30,7 +30,7 @@ df_events = nwb_utils.create_df_events(nwb)
 ## Source 2: Han Pipeline — Bonsai S3 (Old NWB / HDF5)
 
 **Coverage**: Essentially all sessions from Bonsai-Harp hardware at AIND
-**Format**: Old HDF5 NWB (not zarr). Some Bowen sessions are incomplete.
+**Format**: Old HDF5 NWB (not zarr).
 **Location**: `s3://aind-behavior-data/foraging_nwb_bonsai/`
 **Filename pattern**: `{subject_id}_{date}_{time}.nwb` or `{subject_id}_{date}[_{n}].nwb`
 
@@ -40,8 +40,6 @@ df_events = nwb_utils.create_df_events(nwb)
 - Load via: `NWBHDF5IO(s3_path, mode='r')` with s3fs filesystem
 
 **Bpod detection**: `'bpod' in nwb.session_description` — if True, foraging_eff_random_seed is pre-computed in metadata
-
-**Bowen session caveat**: Some sessions from Bowen's subjects are incomplete/incorrect. An explicit list of bad session IDs is used to flag `is_bad_bowen_session=True` in the session table.
 
 ---
 
@@ -71,8 +69,6 @@ df_sessions = get_session_table(if_load_bpod=True)
 ```
 
 **Data flow**: Reads `df_sessions.pkl` from `S3_PATH_BONSAI_ROOT` (the aggregated output of the bonsai-basic pipeline), enriches with docDB curriculum data and mouse-PI mapping.
-
-**Caveat**: Some Bowen sessions have incorrect stats. Flag these with `is_bad_bowen_session=True` using an explicit session ID list.
 
 ---
 

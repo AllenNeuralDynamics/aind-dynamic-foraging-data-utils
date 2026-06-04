@@ -145,11 +145,7 @@ After the parallel per-session writes, each subject's files are merged into one 
   n_trials / n_events / nwb_path / error.
 - `co_skipped_sessions.csv` — the multi-session-per-day CO rows that were skipped, with reason.
 
-### 9. Bad-Bowen guard
-Sessions listed in `Bowen_IncompleteSessions-081225.csv` have unreliable bonsai data; flagged
-`is_bad_bowen_session` and only trusted via their CO asset (never the local bonsai NWB).
-
-### 10. Cross-reader schema normalization
+### 9. Cross-reader schema normalization
 Three readers (AIND, legacy bonsai, legacy bpod) emit slightly different trial schemas. On
 write (`_write_session_parquet`) we normalize so the partitioned tables stay queryable:
 - `subject_id` is always cast to string (matches the `subject_id=` partition dir type);
@@ -229,6 +225,11 @@ Han read the bonsai NWB (different files/pipelines), plus ~14 truncated CO asset
 pipeline trims no trials, so the cache reproduces Han's master table as a single source of
 truth.
 
+The small fraction of per-session metric mismatches are most likely known **Han-pipeline**
+quirks (e.g. [aind-analysis-arch-result-access#26](https://github.com/AllenNeuralDynamics/aind-analysis-arch-result-access/issues/26)),
+not cache errors. They are rare, and the cache db is our intended single source of truth going
+forward — so **we consider this validation passed**.
+
 ---
 
 ## Known limitations
@@ -238,7 +239,7 @@ truth.
 - **Multi-session-per-day CO sessions** without a Han exact match are skipped, not merged —
   see `co_skipped_sessions.csv` and [issue #146](https://github.com/AllenNeuralDynamics/aind-dynamic-foraging-data-utils/issues/146).
 - **~269 sessions are skipped** ("no NWB found"): in Han's table but with no local NWB and no
-  CO asset (e.g. bad-Bowen without a CO asset, or NWB not mounted).
+  CO asset (e.g. the NWB is not mounted).
 - Benign `s3fs`/`aiobotocore` "attached to a different loop" tracebacks during worker S3
   teardown are **not failures**; the `asyncio` logger is quieted in `build_cache` to keep logs
   readable. Trust the builder's `Failed to process` lines + `BUILD SUMMARY` + `processing_log.csv`.

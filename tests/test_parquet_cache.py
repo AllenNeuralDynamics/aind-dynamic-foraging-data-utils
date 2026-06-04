@@ -169,7 +169,6 @@ class TestBuildSessionTableRoundTrip(unittest.TestCase):
                     warnings.simplefilter("ignore")
                     parquet_builder.build_session_table(
                         output_path=out_path,
-                        bowen_csv_path="/nonexistent/path.csv",  # triggers warning
                         include_co_assets=False,
                         verbose=False,
                     )
@@ -180,7 +179,7 @@ class TestBuildSessionTableRoundTrip(unittest.TestCase):
             self.assertEqual(len(df_read), len(mock_df))
 
             # Required new columns must be present
-            for col in ["co_asset_id", "co_s3_nwb_uri", "is_bad_bowen_session", "nwb_data_source"]:
+            for col in ["co_asset_id", "co_s3_nwb_uri", "nwb_data_source"]:
                 self.assertIn(col, df_read.columns, f"Missing column: {col}")
 
     def test_nwb_data_source_assigned(self):
@@ -198,7 +197,6 @@ class TestBuildSessionTableRoundTrip(unittest.TestCase):
                     warnings.simplefilter("ignore")
                     df_out = parquet_builder.build_session_table(
                         output_path=out_path,
-                        bowen_csv_path="/nonexistent/path.csv",
                         include_co_assets=False,
                         verbose=False,
                     )
@@ -247,7 +245,6 @@ class TestTrialEventRoundTrip(unittest.TestCase):
                     "data_source": "bonsai",
                     "co_asset_id": None,
                     "co_s3_nwb_uri": None,
-                    "is_bad_bowen_session": False,
                     "nwb_data_source": "bonsai_s3",
                 }
             )
