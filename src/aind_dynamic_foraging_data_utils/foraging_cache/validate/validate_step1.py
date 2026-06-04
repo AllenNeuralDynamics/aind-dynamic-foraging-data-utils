@@ -12,12 +12,16 @@ bonsai/bpod sources there is no docDB asset, so the legacy route is open-local +
 legacy reader. Legacy is measured at small N (1, 10) per source and EXTRAPOLATED
 (strictly O(N), far too slow to run at 1k+).
 
-CACHE timing is MEASURED at every scale (1/10/100/1k/10k/full); the S3 connection
-is warmed up once so the curve isn't polluted by a cold start.
+CACHE timing is MEASURED at every scale (1/10/100/1k/10k/full): the S3 connection
+is warmed up once, then each (N, op) is sampled up to 100x within a time budget
+(re-drawing the random session subset each rep) and the MEDIAN is reported, so
+the curve isn't polluted by S3 jitter or an unlucky subset.
+
+Run the cache half only (skip the slow legacy chain) with --cache-only.
 
 Artifacts -> scratch/tmp/validation/.
 """
-import os, time, random, warnings, re
+import os, time, random, warnings
 warnings.simplefilter("ignore")
 import numpy as np, pandas as pd, duckdb
 
@@ -40,18 +44,11 @@ def session_name(sid):
     return f"behavior_{s}_{d}_{t[:2]}-{t[2:4]}-{t[4:]}"
 
 
-def main():
+def main(cache_only=False):
     sess = pd.read_parquet(f"{OUT}/session_table.parquet")
     log = pd.read_csv(f"{OUT}/processing_log.csv")
     sess = sess[sess["_session_id"].isin(set(log[log.status == "ok"]["session_id"]))].copy()
     all_ids = sorted(sess["_session_id"]); n_full = len(all_ids)
-    rng = random.Random(42)
-    per_src = {(s, N): rng.sample(sorted(sess[sess.nwb_data_source == s]["_session_id"]), N)
-               for s in SOURCES for N in [1, 10]}
-    scale = {N: rng.sample(all_ids, N) for N in [1, 10, 100, 1000, 10000]}
-    idx = parquet_builder.build_nwb_file_index()
-    row_of = {sid: sess[sess._session_id == sid].iloc[0]
-              for s in SOURCES for N in [1, 10] for sid in per_src[(s, N)]}
 
     def fetch(ids, op):
         duckdb.register("want", pd.DataFrame({"sid": list(ids)}))
@@ -68,26 +65,58 @@ def main():
             return duckdb.sql(f"SELECT session_id, {FIVE} FROM {TRIALS}").df()
         return duckdb.sql(f"SELECT * FROM {TRIALS}").df()
 
-    # ---- CACHE timing (measured) ----
-    print("== cache timing (measured) ==", flush=True)
+    # ---- CACHE timing (measured; repeated sampling -> median) ----
+    # A single cache fetch is noisy: S3 jitter, and which random sessions are
+    # drawn decides how many subject parquet files get scanned (the session_id
+    # JOIN prunes via row-group stats, not the subject_id Hive partition). So
+    # repeat each (N, op) up to 100x within a time budget, RE-DRAWING the random
+    # session subset each rep, and report the MEDIAN. Legacy timing is NOT
+    # recomputed here (kept from legacy_timing.csv).
+    print("== cache timing (measured; repeated sampling -> median) ==", flush=True)
     duckdb.sql(f"SELECT 1 FROM {TRIALS} LIMIT 1").df()  # warm up S3 connection
+    rng2 = random.Random(123)
+
+    def repeated(fn, budget=150.0, max_reps=10, min_reps=5):
+        """Call fn() repeatedly (>=min_reps, <=max_reps, until budget s); median secs.
+
+        Heavy multi-GB scans self-limit to ~min_reps via the time budget; cheap
+        fetches get up to max_reps. 10 reps is plenty for a stable median.
+        """
+        secs = []; last = None; t0 = time.time()
+        while len(secs) < max_reps and (len(secs) < min_reps or (time.time() - t0) < budget):
+            t = time.time(); last = fn(); secs.append(time.time() - t)
+        n = (len(last[0]) + len(last[1])) if isinstance(last, tuple) else len(last)
+        return float(np.median(secs)), len(secs), n
+
     rows = []
     for N in [1, 10, 100, 1000, 10000]:
         for op in OPS:
-            t = time.time(); r = fetch(scale[N], op); sec = time.time() - t
-            rows.append(dict(N=N, op=op, sec=sec, rows=(len(r[0]) + len(r[1])) if isinstance(r, tuple) else len(r)))
-        print(f"  N={N} done", flush=True)
+            med, reps, nr = repeated(lambda N=N, op=op: fetch(rng2.sample(all_ids, N), op))
+            rows.append(dict(N=N, op=op, sec=med, reps=reps, rows=nr))
+            print(f"  N={N:>5} {op:<17}: median={med:6.2f}s over {reps:>3} reps", flush=True)
     for op in ["trial_5col", "trial_full"]:
-        t = time.time(); r = fetch_full(op); rows.append(dict(N=n_full, op=op, sec=time.time() - t, rows=len(r)))
-        print(f"  full {op} done", flush=True)
+        med, reps, nr = repeated(lambda op=op: fetch_full(op))
+        rows.append(dict(N=n_full, op=op, sec=med, reps=reps, rows=nr))
+        print(f"  N={n_full:>5} {op:<17}: median={med:6.2f}s over {reps:>3} reps", flush=True)
     cache = pd.DataFrame(rows); cache.to_csv(f"{ART}/cache_timing.csv", index=False)
+
+    if cache_only:
+        from aind_dynamic_foraging_data_utils.foraging_cache.validate import plot_validation
+        plot_validation.main()
+        print("DONE (cache-only)", flush=True)
+        return
+
+    # legacy + correctness use a fixed per-source sample (seed 42)
+    rng = random.Random(42)
+    per_src = {(s, N): rng.sample(sorted(sess[sess.nwb_data_source == s]["_session_id"]), N)
+               for s in SOURCES for N in [1, 10]}
+    idx = parquet_builder.build_nwb_file_index()
 
     # ---- LEGACY: TRUE chain (docDB query -> S3 glob -> open), cold per data type ----
     print("== legacy TRUE chain (get_subject_assets -> add_s3_location -> create_df_*) ==", flush=True)
 
     def legacy_one(sid, src, want_events):
         """Full legacy chain for one session; returns dict of per-step seconds."""
-        row = row_of[sid]
         if src == "co_asset":
             subj = sid.split("_")[0]; sn = session_name(sid)
             t = time.time(); res = cou.get_subject_assets(subj); t_doc = time.time() - t
@@ -177,4 +206,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    main(cache_only="--cache-only" in sys.argv)
