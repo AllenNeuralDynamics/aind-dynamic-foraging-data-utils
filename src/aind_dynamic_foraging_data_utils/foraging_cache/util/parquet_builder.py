@@ -21,7 +21,7 @@ NWB reader strategy (try-new-then-fallback):
      malformed bpod_backup_BehavioralEvents in many old bpod files)
 
 Usage (small-scale test):
-    from aind_dynamic_foraging_data_utils.foraging_cache import parquet_builder
+    from aind_dynamic_foraging_data_utils.foraging_cache.util import parquet_builder
 
     df_sess = parquet_builder.build_session_table(
         output_path="/tmp/foraging_cache/session_table.parquet",
@@ -42,14 +42,15 @@ import json
 import logging
 import os
 import re
-import time
 import warnings
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import s3fs
+
+from aind_dynamic_foraging_data_utils.foraging_cache.util import postprocess
 
 logger = logging.getLogger(__name__)
 
@@ -236,19 +237,6 @@ def _load_bowen_incomplete_sessions(csv_path=BOWEN_INCOMPLETE_CSV):
 # ---------------------------------------------------------------------------
 
 
-def _parse_co_session_name(sname):
-    """Parse a CO session_name like 'behavior_123456_2024-01-01_13-06-12'
-    into (subject_id, session_date, nwb_suffix_int), or (None, None, None)."""
-    m = re.match(
-        r"behavior_(\d+)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})$",
-        str(sname),
-    )
-    if m:
-        subj, date, time_str = m.groups()
-        return subj, date, int(time_str.replace("-", ""))
-    return None, None, None
-
-
 def _assign_nwb_data_source(row):
     """Determine the preferred NWB data source for a session row."""
     if pd.notna(row.get("co_asset_id")) and row["co_asset_id"] != "":
@@ -267,234 +255,6 @@ def _compute_session_id(df):
         + "_"
         + df["nwb_suffix"].astype(str)
     )
-
-
-def _read_existing_session_table(path):
-    """Read a session table parquet from local or S3 path.
-
-    Returns pd.DataFrame or None if file doesn't exist.
-    """
-    try:
-        if path.startswith("s3://"):
-            fs = s3fs.S3FileSystem(anon=False)
-            s3_path = path[len("s3://") :]
-            if not fs.exists(s3_path):
-                return None
-            return pd.read_parquet(path, filesystem=fs)
-        else:
-            if not os.path.exists(path):
-                return None
-            return pd.read_parquet(path)
-    except Exception:
-        return None
-
-
-def _add_s3_location_parallel(df, n_workers=100, verbose=True):
-    """Parallel replacement for code_ocean_utils.add_s3_location().
-
-    Resolves each CO asset's ``.nwb`` S3 path. The NWB lives at a deterministic
-    ``{location}/nwb/{session_name}.nwb``, so we construct that path and confirm
-    it with a single (non-recursive) ``fs.exists`` call — cheap. Only if that
-    misses (e.g. zarr-directory NWBs or atypical layouts) do we fall back to a
-    recursive ``{location}/**/*.nwb`` glob, which lists every object under the
-    asset. This keeps the common case to one S3 call instead of a full listing.
-
-    Uses a ThreadPoolExecutor since the work is I/O-bound (S3 API calls). More
-    threads do not scale past s3fs's shared connection pool, so ~100 is plenty.
-    """
-    fs = s3fs.S3FileSystem()
-
-    def _resolve_one(location, session_name):
-        """Return the s3:// path of the asset's .nwb, or '' if none found."""
-        # Fast path: deterministic constructed path, verified with one exists().
-        if isinstance(session_name, str) and session_name:
-            candidate = f"{location}/nwb/{session_name}.nwb"
-            try:
-                if fs.exists(candidate):
-                    return candidate if candidate.startswith("s3://") else f"s3://{candidate}"
-            except Exception:
-                pass
-        # Fallback: recursive glob (handles zarr dirs / atypical layouts).
-        try:
-            hits = fs.glob(f"{location}/**/*.nwb")
-            return f"s3://{hits[0]}" if hits else ""
-        except Exception:
-            return ""
-
-    locations = df["location"].tolist()
-    if "session_name" in df.columns:
-        session_names = df["session_name"].tolist()
-    else:
-        session_names = [None] * len(locations)
-
-    n_actual = min(n_workers, len(locations)) if locations else 1
-    if verbose:
-        print(f"    Using {n_actual} threads to resolve {len(locations)} NWB S3 paths")
-
-    results = [""] * len(locations)
-    with ThreadPoolExecutor(max_workers=max(1, n_actual)) as pool:
-        future_to_idx = {
-            pool.submit(_resolve_one, loc, sn): i
-            for i, (loc, sn) in enumerate(zip(locations, session_names))
-        }
-        for n_done, future in enumerate(as_completed(future_to_idx), 1):
-            idx = future_to_idx[future]
-            results[idx] = future.result()
-            if verbose and (n_done <= 3 or n_done % 50 == 0 or n_done == len(locations)):
-                print(f"    NWB path resolve: {n_done}/{len(locations)}")
-
-    df = df.copy()
-    df["s3_nwb_location"] = results
-    return df
-
-
-def _get_assets_with_retry(chunk, max_retries=4, base_delay=2):
-    """
-    Call get_assets() for one subject chunk, retrying transient docDB errors.
-
-    docDB (api.allenneuraldynamics.org) intermittently returns 503 Service
-    Unavailable under load. Without retries a single 503 in any chunk aborts the
-    whole enrichment (leaving every session with no CO asset). Here we retry with
-    exponential backoff and, if a chunk still fails, return None so the caller can
-    skip just those subjects — they get picked up on the next incremental run via
-    recheck_missing_co.
-    """
-    from aind_dynamic_foraging_data_utils.code_ocean_utils import get_assets
-
-    last_exc = None
-    for attempt in range(max_retries):
-        try:
-            return get_assets(subjects=chunk, processed=True, modality=["behavior"])
-        except Exception as e:  # transient docDB errors (503, timeouts, ...)
-            last_exc = e
-            if attempt < max_retries - 1:
-                time.sleep(base_delay * (2**attempt))
-    logger.warning(
-        "docDB query failed for %d subjects after %d retries (skipped this run): %s",
-        len(chunk),
-        max_retries,
-        last_exc,
-    )
-    return None
-
-
-def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):  # noqa: C901
-    """Query docDB for CO assets for the given subject_ids and merge onto df_sessions.
-
-    Populates 'co_asset_id' and 'co_s3_nwb_uri' columns via targeted
-    get_assets(subjects=subject_ids) + add_s3_location().
-
-    Parameters
-    ----------
-    df_sessions : pd.DataFrame
-        Must have subject_id, session_date, nwb_suffix columns.
-    subject_ids : list[str]
-        Subject IDs to query. If empty, skips the query entirely.
-    verbose : bool
-
-    Returns
-    -------
-    pd.DataFrame
-        df_sessions with co_asset_id and co_s3_nwb_uri updated in place.
-    """
-    if not subject_ids:
-        if verbose:
-            print("  No subjects to query for CO assets — skipping.")
-        return df_sessions
-
-    if verbose:
-        print(f"  Querying docDB for CO assets (subjects={len(subject_ids)})...")
-
-    # Chunk subjects and query docDB in parallel threads to avoid a single
-    # massive regex and to overlap network latency.
-    CHUNK_SIZE = 10
-    chunks = [subject_ids[i : i + CHUNK_SIZE] for i in range(0, len(subject_ids), CHUNK_SIZE)]
-    n_threads = min(len(chunks), 20)
-
-    if verbose:
-        print(
-            f"    Using {n_threads} threads for {len(chunks)} docDB query chunks "
-            f"({CHUNK_SIZE} subjects/chunk)"
-        )
-
-    co_frames = []
-    with ThreadPoolExecutor(max_workers=n_threads) as pool:
-        futures = {
-            pool.submit(_get_assets_with_retry, chunk): i for i, chunk in enumerate(chunks)
-        }
-        for n_done, future in enumerate(as_completed(futures), 1):
-            result = future.result()
-            if result is not None and len(result) > 0:
-                co_frames.append(result)
-            if verbose and (n_done <= 3 or n_done % 10 == 0 or n_done == len(chunks)):
-                print(f"    docDB query: {n_done}/{len(chunks)} chunks done")
-
-    df_co = pd.concat(co_frames, ignore_index=True) if co_frames else None
-
-    if df_co is None or len(df_co) == 0:
-        if verbose:
-            print("  No CO assets found for these subjects.")
-        return df_sessions
-
-    parsed = df_co["session_name"].apply(_parse_co_session_name)
-    df_co = df_co.copy()
-    df_co["_subject_id"] = parsed.apply(lambda x: x[0])
-    df_co["_session_date"] = parsed.apply(lambda x: x[1])
-    df_co["_nwb_suffix"] = parsed.apply(lambda x: x[2]).astype("Int64")
-    df_co = df_co.dropna(subset=["_subject_id"])
-
-    if verbose:
-        print(f"  Found {len(df_co)} CO assets from docDB (all sessions for queried subjects)")
-
-    # Filter to only CO assets that match sessions in df_sessions, so we
-    # don't waste time S3-globbing thousands of irrelevant assets.
-    session_keys = set(
-        zip(
-            df_sessions["subject_id"].astype(str),
-            df_sessions["session_date"].astype(str),
-            df_sessions["nwb_suffix"],
-        )
-    )
-    match_mask = [
-        (row["_subject_id"], row["_session_date"], row["_nwb_suffix"]) in session_keys
-        for _, row in df_co.iterrows()
-    ]
-    df_co = df_co[match_mask]
-
-    if verbose:
-        print(f"  Narrowed to {len(df_co)} CO assets matching requested sessions")
-
-    if len(df_co) == 0:
-        return df_sessions
-
-    if verbose:
-        print("  Fetching S3 locations (parallel)...")
-    df_co = _add_s3_location_parallel(df_co, verbose=verbose)
-
-    co_lookup = {}
-    for _, row in df_co.iterrows():
-        key = (row["_subject_id"], row["_session_date"], row["_nwb_suffix"])
-        co_lookup[key] = (
-            row.get("code_ocean_asset_id", pd.NA),
-            row.get("s3_nwb_location", pd.NA),
-        )
-
-    def _lookup(r, field):
-        """Return co_asset_id ('id') or co_s3_nwb_uri ('uri') for row r."""
-        val = co_lookup.get(
-            (str(r["subject_id"]), str(r["session_date"]), r["nwb_suffix"]),
-            (pd.NA, pd.NA),
-        )
-        return val[0] if field == "id" else val[1]
-
-    df_sessions["co_asset_id"] = df_sessions.apply(lambda r: _lookup(r, "id"), axis=1)
-    df_sessions["co_s3_nwb_uri"] = df_sessions.apply(lambda r: _lookup(r, "uri"), axis=1)
-
-    n_matched = df_sessions["co_asset_id"].notna().sum()
-    if verbose:
-        print(f"  Matched {n_matched}/{len(df_sessions)} sessions with CO assets")
-
-    return df_sessions
 
 
 # ---------------------------------------------------------------------------
@@ -773,7 +533,7 @@ def build_session_table(  # noqa: C901
         )
         cols = [c for c in ["session_name", "subject_id", "co_asset_id", "skip_reason"]
                 if c in df_skipped.columns]
-        _write_csv(df_skipped[cols], skipped_path)
+        postprocess.write_csv(df_skipped[cols], skipped_path)
         if verbose:
             print(f"  Skipped {len(df_skipped)} multi-session CO rows -> {skipped_path}")
 
@@ -956,8 +716,11 @@ def _read_session_with_fallback(nwb_path, nwb_data_source, session_id, legacy_fa
           "legacy_bonsai"        -- legacy reader on a Han bonsai NWB
           "legacy_bpod"          -- legacy reader on a Han bpod NWB
     """
-    from aind_dynamic_foraging_data_utils.foraging_cache import nwb_reader_aind, nwb_reader_legacy
-    from aind_dynamic_foraging_data_utils.foraging_cache.nwb_reader_aind import (
+    from aind_dynamic_foraging_data_utils.foraging_cache.util import (
+        nwb_reader_aind,
+        nwb_reader_legacy,
+    )
+    from aind_dynamic_foraging_data_utils.foraging_cache.util.nwb_reader_aind import (
         AINDReaderQualityError,
     )
 
@@ -1208,17 +971,17 @@ def build_trial_and_event_tables(  # noqa: C901
 
     # ---- 6. Append to the human-readable triage CSV log ----
     if log_csv_path is not None and all_results:
-        _append_triage_log(log_csv_path, all_results, verbose=verbose)
+        postprocess.append_triage_log(log_csv_path, all_results, verbose=verbose)
 
     # ---- 7. Coalesce each affected subject's per-session files into one ----
     if coalesce and affected_subjects:
         if verbose:
             print(f"\nCoalescing {len(affected_subjects)} subject partitions into one file each...")
-        _coalesce_partitions(
+        postprocess.coalesce_partitions(
             trial_output_prefix, affected_subjects,
             sort_cols=["session_date", "nwb_suffix", "trial"], verbose=verbose,
         )
-        _coalesce_partitions(
+        postprocess.coalesce_partitions(
             event_output_prefix, affected_subjects,
             sort_cols=["session_date", "nwb_suffix", "timestamps"], verbose=verbose,
         )
@@ -1255,159 +1018,6 @@ def build_trial_and_event_tables(  # noqa: C901
                 print(f"    ... and {n_fail - 20} more (see failed_sessions in return value)")
 
     return summary
-
-
-# ---------------------------------------------------------------------------
-# Triage log + coalescing
-# ---------------------------------------------------------------------------
-
-# Columns of the human-readable per-session triage log (one row per session).
-_TRIAGE_COLUMNS = [
-    "session_id", "subject_id", "session_date", "nwb_suffix",
-    "status", "data_source", "reader", "n_trials", "n_events",
-    "nwb_path", "error", "processed_at",
-]
-
-
-def _append_triage_log(log_csv_path, results, verbose=True):
-    """
-    Write/merge a human-readable CSV with one row per processed session.
-
-    Each row records the triage detail (status, data source, reader used, row
-    counts, NWB path, error). Existing rows are merged in and de-duplicated by
-    session_id (the latest run wins), so the file is a cumulative state of every
-    session ever processed.
-    """
-    import datetime as _dt
-
-    now = _dt.datetime.now().isoformat(timespec="seconds")
-    new_rows = [{**r, "processed_at": now} for r in results]
-    df_new = pd.DataFrame(new_rows)
-    df_new = df_new.reindex(columns=_TRIAGE_COLUMNS)
-
-    # Merge with any existing log (latest row per session_id wins).
-    try:
-        df_old = _read_csv(log_csv_path)
-        df_old = df_old[~df_old["session_id"].isin(set(df_new["session_id"]))]
-        df_all = pd.concat([df_old, df_new], ignore_index=True)
-    except FileNotFoundError:
-        df_all = df_new
-
-    df_all = df_all.sort_values(["subject_id", "session_date", "nwb_suffix"]).reset_index(drop=True)
-    _write_csv(df_all, log_csv_path)
-    if verbose:
-        print(f"  Triage log: {len(df_new)} sessions updated -> {log_csv_path} ({len(df_all)} total)")
-
-
-def _coalesce_partitions(output_prefix, subject_ids, sort_cols, n_threads=16, verbose=True):
-    """Coalesce each subject's per-session parquet files into one sorted file."""
-    subject_ids = list(subject_ids)
-    n = min(len(subject_ids), n_threads)
-    done = 0
-    with ThreadPoolExecutor(max_workers=max(1, n)) as pool:
-        futures = {
-            pool.submit(_coalesce_subject, output_prefix, s, sort_cols): s for s in subject_ids
-        }
-        for fut in as_completed(futures):
-            try:
-                fut.result()
-            except Exception as e:  # don't let one subject abort the rest
-                logger.warning("Coalesce failed for subject %s: %s", futures[fut], e)
-            done += 1
-            if verbose and (done % 100 == 0 or done == len(subject_ids)):
-                print(f"    coalesced {done}/{len(subject_ids)} subjects")
-
-
-def _coalesce_subject(output_prefix, subject_id, sort_cols):
-    """
-    Merge all per-session parquet files in subject_id=<id>/ into one sorted file
-    named {subject_id}.parquet.
-
-    Sessions already present in a prior coalesced file are replaced by any newly
-    written per-session files for the same session_id (so incremental adds and
-    reprocessing both stay correct). The per-session files are removed afterward.
-    """
-    part = f"subject_id={subject_id}"
-    coalesced = f"{subject_id}.parquet"
-    tmp = f"{subject_id}.parquet.tmp"
-
-    fs, base = _partition_fs(output_prefix, part)
-    entries = fs.list(base)
-    session_files = [e for e in entries if e.endswith(".parquet") and e not in (coalesced, tmp)]
-    if not session_files:
-        return  # nothing new to merge (already coalesced)
-
-    new_df = pd.concat([fs.read_parquet(e) for e in session_files], ignore_index=True)
-    if coalesced in entries:
-        old_df = fs.read_parquet(coalesced)
-        old_df = old_df[~old_df["session_id"].isin(set(new_df["session_id"]))]
-        combined = pd.concat([old_df, new_df], ignore_index=True)
-    else:
-        combined = new_df
-
-    use_cols = [c for c in sort_cols if c in combined.columns]
-    if use_cols:
-        combined = combined.sort_values(use_cols).reset_index(drop=True)
-
-    fs.write_parquet(combined, tmp)
-    for e in session_files:
-        fs.delete(e)
-    if coalesced in entries:
-        fs.delete(coalesced)
-    fs.rename(tmp, coalesced)
-
-
-class _PartitionFS:
-    """Minimal list/read/write/delete/rename over one partition dir (local or S3)."""
-
-    def __init__(self, output_prefix, part):
-        self.is_s3 = output_prefix.startswith("s3://")
-        if self.is_s3:
-            self._fs = s3fs.S3FileSystem(anon=False)
-            self.base = f"{output_prefix[len('s3://'):]}/{part}"
-        else:
-            self.base = os.path.join(output_prefix, part)
-
-    def list(self, _ignored=None):
-        if self.is_s3:
-            try:
-                return [p.split("/")[-1] for p in self._fs.ls(self.base)]
-            except FileNotFoundError:
-                return []
-        if not os.path.isdir(self.base):
-            return []
-        return os.listdir(self.base)
-
-    def read_parquet(self, name):
-        if self.is_s3:
-            with self._fs.open(f"{self.base}/{name}", "rb") as f:
-                return pd.read_parquet(f)
-        return pd.read_parquet(os.path.join(self.base, name))
-
-    def write_parquet(self, df, name):
-        if self.is_s3:
-            with self._fs.open(f"{self.base}/{name}", "wb") as f:
-                df.to_parquet(f, index=False)
-        else:
-            df.to_parquet(os.path.join(self.base, name), index=False)
-
-    def delete(self, name):
-        if self.is_s3:
-            self._fs.rm(f"{self.base}/{name}")
-        else:
-            os.remove(os.path.join(self.base, name))
-
-    def rename(self, src, dst):
-        if self.is_s3:
-            self._fs.mv(f"{self.base}/{src}", f"{self.base}/{dst}")
-        else:
-            os.rename(os.path.join(self.base, src), os.path.join(self.base, dst))
-
-
-def _partition_fs(output_prefix, part):
-    """Return (_PartitionFS, base_path) for a subject partition dir."""
-    fs = _PartitionFS(output_prefix, part)
-    return fs, fs.base
 
 
 # ---------------------------------------------------------------------------
@@ -1542,28 +1152,3 @@ def _read_json(path):
             return json.load(f)
 
 
-def _read_csv(path):
-    """Read a CSV from a local path or S3 URI. Raises FileNotFoundError if absent."""
-    if path.startswith("s3://"):
-        fs = s3fs.S3FileSystem(anon=False)
-        s3_path = path[len("s3://") :]
-        if not fs.exists(s3_path):
-            raise FileNotFoundError(path)
-        with fs.open(s3_path, "r") as f:
-            return pd.read_csv(f)
-    if not os.path.exists(path):
-        raise FileNotFoundError(path)
-    return pd.read_csv(path)
-
-
-def _write_csv(df, path):
-    """Write a DataFrame as CSV to a local path or S3 URI."""
-    if path.startswith("s3://"):
-        fs = s3fs.S3FileSystem(anon=False)
-        with fs.open(path[len("s3://") :], "w") as f:
-            df.to_csv(f, index=False)
-    else:
-        parent = os.path.dirname(path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        df.to_csv(path, index=False)

@@ -43,7 +43,7 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-from aind_dynamic_foraging_data_utils.foraging_cache import parquet_builder
+from aind_dynamic_foraging_data_utils.foraging_cache.util import parquet_builder
 
 logger = logging.getLogger(__name__)
 
