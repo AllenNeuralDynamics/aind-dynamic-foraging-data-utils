@@ -502,50 +502,204 @@ def _enrich_with_co_assets(df_sessions, subject_ids, verbose=True):  # noqa: C90
 # ---------------------------------------------------------------------------
 
 
+def _merge_han_and_co(df_han, df_co, verbose=True):  # noqa: C901
+    """
+    Merge the Han session universe with the docDB / Code Ocean (CO) universe into
+    one complete session table, attaching CO assets per the agreed match rule.
+
+    Why two universes: Han's pipeline is still running but is slated to be shut
+    down eventually, and it did not capture some sessions that exist on Code Ocean.
+    The docDB discovery (get_dynamic_foraging_assets) is the complete CO universe.
+    We union them so the cache covers every session (and keeps working once Han's
+    pipeline is retired).
+
+    Match rule (see GitHub issue #146 for the multi-session-per-day background):
+
+      Han has at most ONE session per (subject_id, session_date) — verified — which
+      is what makes the 2-tuple safe for the single-session case.
+
+      * CO has ONE session that (subject, date)  [single-session-per-day]:
+          - (subject, date) present in Han  -> attach the CO asset to that Han row
+            via the 2-tuple. This deliberately tolerates the common HH-MM-SS drift
+            between Han's nwb_suffix and docDB's (same session, different recorded
+            time), which exact-suffix matching otherwise misses.
+          - (subject, date) absent from Han -> add as a NEW CO-only row; we are
+            sure it is the only real session that day.
+
+      * CO has MULTIPLE sessions that (subject, date)  [multi-session-per-day]:
+          - if exactly one of them matches a Han session by the 3-tuple
+            (subject, date, nwb_suffix) -> attach that one to the Han row.
+            (Verified: such days never have >1 exact match -> unambiguous.)
+          - every other same-day CO session, and ALL sessions on multi-session
+            days with no exact match, are NOT merged or added — they are returned
+            in ``df_skipped`` with a reason. We cannot safely tell which CO session
+            Han refers to, so we log rather than guess (issue #146).
+
+    The deterministic NWB S3 path is constructed from the asset root + session_name
+    (``{location}/nwb/{session_name}.nwb``) — no per-asset S3 glob needed.
+
+    Parameters
+    ----------
+    df_han : pd.DataFrame
+        Han sessions; must have subject_id (str), session_date ("YYYY-MM-DD"),
+        nwb_suffix (Int64), _session_id, plus Han metadata columns.
+    df_co : pd.DataFrame
+        docDB discovery from get_dynamic_foraging_assets(): session_name, location,
+        code_ocean_asset_id, subject_id.
+    verbose : bool
+
+    Returns
+    -------
+    (df_union, df_skipped) : tuple[pd.DataFrame, pd.DataFrame]
+        df_union   - df_han with co_asset_id / co_s3_nwb_uri filled where matched,
+                     plus appended CO-only NEW rows (Han metadata columns are NaN).
+        df_skipped - multi-session CO rows that were logged and NOT used, with a
+                     ``skip_reason`` column (for triage; see issue #146).
+    """
+    # --- Parse the CO universe into (subject, date, suffix) + constructed URI ---
+    co = df_co.copy()
+    parsed = co["session_name"].str.extract(
+        r"^behavior_(\d+)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})$"
+    )
+    co["subject_id"] = parsed[0]
+    co["session_date"] = parsed[1]
+    co["nwb_suffix"] = parsed[2].str.replace("-", "", regex=False)
+    co = co.dropna(subset=["subject_id", "session_date", "nwb_suffix"]).copy()
+    co["nwb_suffix"] = co["nwb_suffix"].astype(int)
+    co["co_s3_nwb_uri"] = (
+        co["location"].astype(str) + "/nwb/" + co["session_name"].astype(str) + ".nwb"
+    )
+    co = co.rename(columns={"code_ocean_asset_id": "co_asset_id"})
+
+    # single- vs multi-session days within the CO universe
+    day_size = co.groupby(["subject_id", "session_date"])["nwb_suffix"].transform("size")
+    co["_is_single_day"] = day_size == 1
+    co["_in_han2"] = [
+        (s, d) in set(zip(df_han["subject_id"], df_han["session_date"]))
+        for s, d in zip(co["subject_id"], co["session_date"])
+    ]
+
+    # --- Lookups for attaching CO -> Han ---
+    co3 = {  # exact 3-tuple -> (asset_id, uri), for ALL CO sessions
+        (r.subject_id, r.session_date, int(r.nwb_suffix)): (r.co_asset_id, r.co_s3_nwb_uri)
+        for r in co.itertuples(index=False)
+    }
+    co_single2 = {  # 2-tuple -> (asset_id, uri), SINGLE-day CO sessions only
+        (r.subject_id, r.session_date): (r.co_asset_id, r.co_s3_nwb_uri)
+        for r in co[co["_is_single_day"]].itertuples(index=False)
+    }
+    han3 = {
+        (s, d, int(x))
+        for s, d, x in zip(
+            df_han["subject_id"],
+            df_han["session_date"],
+            [v if pd.notna(v) else -1 for v in df_han["nwb_suffix"]],
+        )
+    }
+
+    # --- Attach CO to each Han row: exact 3-tuple first, then single-day 2-tuple ---
+    def _co_for_han(row):
+        suf = int(row["nwb_suffix"]) if pd.notna(row["nwb_suffix"]) else -1
+        hit = co3.get((row["subject_id"], row["session_date"], suf))
+        if hit is None:
+            hit = co_single2.get((row["subject_id"], row["session_date"]))
+        return hit if hit is not None else (pd.NA, pd.NA)
+
+    df_han = df_han.copy()
+    pairs = df_han.apply(_co_for_han, axis=1)
+    df_han["co_asset_id"] = [p[0] for p in pairs]
+    df_han["co_s3_nwb_uri"] = [p[1] for p in pairs]
+
+    # --- CO-only NEW rows: single-day CO sessions whose (subject,date) not in Han ---
+    co_new = co[co["_is_single_day"] & ~co["_in_han2"]]
+    new_rows = pd.DataFrame(
+        {
+            "subject_id": co_new["subject_id"].to_numpy(),
+            "session_date": co_new["session_date"].to_numpy(),
+            "nwb_suffix": pd.array(co_new["nwb_suffix"].to_numpy(), dtype="Int64"),
+            "co_asset_id": co_new["co_asset_id"].to_numpy(),
+            "co_s3_nwb_uri": co_new["co_s3_nwb_uri"].to_numpy(),
+        }
+    )
+    if len(new_rows):
+        new_rows["_session_id"] = _compute_session_id(new_rows)
+
+    # --- Skipped multi-session CO sessions (logged, not used) ---
+    multi = co[~co["_is_single_day"]].copy()
+    multi["_exact"] = [
+        (r.subject_id, r.session_date, int(r.nwb_suffix)) in han3
+        for r in multi.itertuples(index=False)
+    ]
+    matched_days = set(
+        multi.loc[multi["_exact"], ["subject_id", "session_date"]].itertuples(index=False, name=None)
+    )
+    df_skipped = multi[~multi["_exact"]].copy()
+    df_skipped["skip_reason"] = [
+        "extra same-day session (Han matched another suffix)"
+        if (r.subject_id, r.session_date) in matched_days
+        else "multi-session day, no Han exact match (ambiguous)"
+        for r in df_skipped.itertuples(index=False)
+    ]
+
+    df_union = pd.concat([df_han, new_rows], ignore_index=True)
+
+    if verbose:
+        n_attached = int(df_han["co_asset_id"].notna().sum())
+        print(
+            f"  CO merge: {n_attached} Han sessions matched a CO asset, "
+            f"{len(new_rows)} CO-only sessions added, "
+            f"{len(df_skipped)} multi-session CO rows skipped (see skip log)."
+        )
+
+    return df_union, df_skipped
+
+
 def build_session_table(  # noqa: C901
     output_path=SESSION_TABLE_S3_URI,
     bowen_csv_path=BOWEN_INCOMPLETE_CSV,
     include_co_assets=True,
+    co_discovery=None,
     verbose=True,
-    incremental=True,
-    recheck_missing_co=True,
 ):
     """
-    Build the session-level parquet table by combining:
-      1. Han pipeline session table  (primary metadata source)
-      2. CO asset IDs from docDB     (for sessions with AIND-processed CO assets)
-      3. Bowen incomplete session flags
+    Build the complete session-level parquet table by unioning two universes:
+      1. Han pipeline session table  — rich behavioural metadata (foraging_eff,
+         finished_trials, curriculum, ...); at most one session per (subject, date).
+      2. docDB / Code Ocean universe — every processed dynamic-foraging session
+         (get_dynamic_foraging_assets), catching sessions missing from Han and
+         attaching the CO asset + constructed S3 NWB path.
 
-    When ``incremental=True`` (default), loads the existing session table from
-    ``output_path`` and only queries docDB for **new** sessions (those whose
-    ``_session_id`` is not in the existing table). This avoids re-running ~13k
-    S3 globs on every build.
+    CO assets are attached / unioned via _merge_han_and_co() — see its docstring
+    and GitHub issue #146 for the single- vs multi-session-per-day match rule
+    (single-day: 2-tuple match/add; multi-day: keep only the exact 3-tuple match,
+    log+skip the rest). This replaces the old per-subject docDB enrichment + S3
+    globbing: one paginated discovery query, then deterministic path construction.
 
-    The resulting table has one row per session with all Han metadata plus:
-      - _session_id         : unique key "{subject_id}_{session_date}_{nwb_suffix}"
-      - co_asset_id       : CO data asset ID (str or None)
-      - co_s3_nwb_uri     : S3 URI of the NWB inside the CO asset (str or None)
-      - nwb_data_source   : "co_asset" | "bonsai_s3" | "bpod_s3"
+    The resulting table has one row per session with all Han metadata (NaN for
+    CO-only sessions Han never tracked) plus:
+      - _session_id          : unique key "{subject_id}_{session_date}_{nwb_suffix}"
+      - co_asset_id          : CO data asset ID (str or NA)
+      - co_s3_nwb_uri        : S3 URI of the NWB inside the CO asset (str or NA)
+      - nwb_data_source      : "co_asset" | "bonsai_s3" | "bpod_s3"
       - is_bad_bowen_session : bool
 
     Parameters
     ----------
     output_path : str
-        Where to write the parquet file (local path or S3 URI).
+        Where to write the parquet (local path or S3 URI). A companion
+        ``co_skipped_sessions.csv`` (the skipped multi-session CO rows, issue #146)
+        is written alongside it.
     bowen_csv_path : str
-        Path to Bowen incomplete sessions CSV.
+        Path to the Bowen incomplete-sessions CSV.
     include_co_assets : bool
-        If False, skip all CO asset lookups.
+        If False, skip the docDB discovery (Han-only table; co columns are NA).
+    co_discovery : pd.DataFrame | None
+        Optional pre-fetched get_dynamic_foraging_assets() result, to skip the
+        ~137 s docDB query (handy for dev iteration / local caching). None -> fetch.
     verbose : bool
-    incremental : bool
-        If True (default), load existing table and only process new sessions.
-        Falls back to full build if no existing table is found.
-    recheck_missing_co : bool
-        If True (default) and incremental, re-query subjects whose sessions
-        previously had no CO asset, to pick up newly available assets.
 
     Returns:
-        pd.DataFrame: The full session table (also written to output_path).
+        pd.DataFrame: the full session table (also written to output_path).
     """
     # ---- 1. Load Han pipeline session table (bonsai + bpod) ----
     if verbose:
@@ -570,72 +724,22 @@ def build_session_table(  # noqa: C901
     if verbose:
         print(f"  Loaded {len(df_han)} sessions from Han table")
 
-    # ---- 2. Try loading existing session table (incremental mode) ----
-    df_existing = None
-    if incremental:
-        df_existing = _read_existing_session_table(output_path)
-        if df_existing is not None:
-            if verbose:
-                print(
-                    f"  Loaded existing session table: {len(df_existing)} rows from {output_path}"
-                )
-        else:
-            if verbose:
-                print("  No existing session table found — falling back to full build.")
-
-    # ---- 3. Determine new vs existing sessions ----
-    if df_existing is not None and "_session_id" in df_existing.columns:
-        existing_ids = set(df_existing["_session_id"])
-        new_mask = ~df_han["_session_id"].isin(existing_ids)
-        df_new = df_han[new_mask].copy()
-        if verbose:
-            print(f"  New sessions to process: {len(df_new)}")
-    else:
-        # Full build: treat all Han sessions as new
-        df_new = df_han.copy()
-        df_existing = None
-        if verbose:
-            print(f"  Full build: processing all {len(df_new)} sessions")
-
-    # ---- 4. Initialise CO asset columns on new rows ----
-    df_new["co_asset_id"] = pd.NA
-    df_new["co_s3_nwb_uri"] = pd.NA
-
-    if include_co_assets and len(df_new) > 0:
-        try:
-            new_subjects = sorted(df_new["subject_id"].unique().tolist())
-            df_new = _enrich_with_co_assets(df_new, new_subjects, verbose=verbose)
-        except Exception as e:
-            warnings.warn(f"Failed to load CO assets from docDB for new sessions: {e}")
-
-    # ---- 5. Recheck existing sessions with missing CO assets ----
-    if (
-        include_co_assets
-        and recheck_missing_co
-        and df_existing is not None
-        and len(df_existing) > 0
-    ):
-        missing_co_mask = df_existing["co_asset_id"].isna()
-        n_missing = missing_co_mask.sum()
-        if n_missing > 0:
-            if verbose:
-                print(f"  Rechecking {n_missing} existing sessions with missing CO assets...")
-            recheck_subjects = sorted(
-                df_existing.loc[missing_co_mask, "subject_id"].unique().tolist()
+    # ---- 2. Union with the docDB / CO universe (or build Han-only) ----
+    df_skipped = None
+    if include_co_assets:
+        if co_discovery is None:
+            from aind_dynamic_foraging_data_utils.code_ocean_utils import (
+                get_dynamic_foraging_assets,
             )
-            try:
-                df_existing = _enrich_with_co_assets(df_existing, recheck_subjects, verbose=verbose)
-            except Exception as e:
-                warnings.warn(f"Failed to recheck CO assets: {e}")
-        elif verbose:
-            print("  All existing sessions already have CO assets — no recheck needed.")
 
-    # ---- 6. Combine existing + new ----
-    if df_existing is not None and len(df_existing) > 0:
-        # Use Han columns for new rows, preserve existing columns for old rows
-        df_sessions = pd.concat([df_existing, df_new], ignore_index=True)
+            if verbose:
+                print("Querying docDB for the complete dynamic-foraging CO universe...")
+            co_discovery = get_dynamic_foraging_assets()
+        df_sessions, df_skipped = _merge_han_and_co(df_han, co_discovery, verbose=verbose)
     else:
-        df_sessions = df_new
+        df_sessions = df_han.copy()
+        df_sessions["co_asset_id"] = pd.NA
+        df_sessions["co_s3_nwb_uri"] = pd.NA
 
     # ---- 7. Flag Bowen incomplete sessions (refresh on all rows) ----
     bowen_bad_co_ids = _load_bowen_incomplete_sessions(bowen_csv_path)
@@ -652,6 +756,19 @@ def build_session_table(  # noqa: C901
         print(f"Writing session table ({len(df_sessions)} rows) -> {output_path} ...")
 
     _write_dataframe_as_parquet(df_sessions, output_path)
+
+    # Companion log of the skipped multi-session CO rows (issue #146), for triage.
+    if df_skipped is not None and len(df_skipped):
+        skipped_path = (
+            output_path.rsplit("/", 1)[0] + "/co_skipped_sessions.csv"
+            if "/" in output_path
+            else "co_skipped_sessions.csv"
+        )
+        cols = [c for c in ["session_name", "subject_id", "co_asset_id", "skip_reason"]
+                if c in df_skipped.columns]
+        _write_csv(df_skipped[cols], skipped_path)
+        if verbose:
+            print(f"  Skipped {len(df_skipped)} multi-session CO rows -> {skipped_path}")
 
     if verbose:
         print("  Done!")

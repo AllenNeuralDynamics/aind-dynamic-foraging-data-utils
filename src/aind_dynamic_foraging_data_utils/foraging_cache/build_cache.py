@@ -62,6 +62,7 @@ class Config:
     random_seed: int = 42
     n_workers: Optional[int] = None  # worker processes; None -> CO_CPUS-1
     coalesce: bool = True  # merge each subject's sessions into one parquet file
+    co_cache: Optional[str] = None  # dev: cache the docDB discovery parquet here
 
     @property
     def is_s3(self) -> bool:
@@ -93,59 +94,57 @@ class Config:
 # ---------------------------------------------------------------------------
 
 
-def build_session_pool(cfg: Config):
+def build_sessions(cfg: Config):
     """
-    Build the Han session table WITHOUT CO assets — fast (no docDB / no S3).
+    Build the complete session table: Han ∪ docDB/CO universe, CO assets attached.
 
-    This is the pool we sample from. CO-asset enrichment (the slow docDB + S3
-    step) is deliberately deferred until after sampling, so a --limit run only
-    pays that cost for the sampled sessions.
+    See parquet_builder.build_session_table / _merge_han_and_co for the match
+    rule. The ~137 s docDB discovery can be cached locally for dev iteration via
+    --co-cache (loaded if present, else fetched once and saved).
     """
-    _banner("Building session pool (Han metadata only — no CO assets yet)")
+    _banner("Building session table (Han ∪ docDB CO universe)")
     return parquet_builder.build_session_table(
         output_path=cfg.session_out,
-        include_co_assets=False,
-        incremental=not cfg.full_rebuild,
+        include_co_assets=True,
+        co_discovery=_load_or_fetch_co_discovery(cfg),
         verbose=True,
     )
 
 
+def _load_or_fetch_co_discovery(cfg: Config):
+    """
+    Dev helper: if --co-cache is set, load the cached docDB discovery parquet (or
+    fetch once and save it). Returns None when no cache is configured, so
+    build_session_table fetches fresh.
+    """
+    if not cfg.co_cache:
+        return None
+    import pandas as pd
+
+    if os.path.exists(cfg.co_cache):
+        print(f"  using cached docDB discovery: {cfg.co_cache}")
+        return pd.read_parquet(cfg.co_cache)
+
+    from aind_dynamic_foraging_data_utils.code_ocean_utils import get_dynamic_foraging_assets
+
+    print(f"  fetching docDB discovery, caching -> {cfg.co_cache}")
+    co = get_dynamic_foraging_assets()
+    cols = ["name", "session_name", "location", "code_ocean_asset_id", "subject_id"]
+    co[[c for c in cols if c in co.columns]].to_parquet(cfg.co_cache)
+    return co
+
+
 def select_sessions(cfg: Config, session_df):
     """
-    Pick the sessions to build EARLY, from Han metadata, before any AIND/CO work.
-
-    Full pool unless --limit N is given, in which case a random N-session subset
-    (seeded) — which still spans CO / bonsai / bpod routes.
+    Optionally subsample the complete session table for a quick test (--limit N,
+    seeded). The full table is still written to session_out by build_sessions;
+    only the trial/event build is limited.
     """
     if cfg.limit is None or len(session_df) <= cfg.limit:
         return session_df
     sampled = session_df.sample(n=cfg.limit, random_state=cfg.random_seed)
-    print(f"  --limit: randomly sampled {len(sampled)} of {len(session_df)} sessions (early)")
+    print(f"  --limit: randomly sampled {len(sampled)} of {len(session_df)} sessions")
     return sampled.reset_index(drop=True)
-
-
-def enrich_selected(cfg: Config, session_df):
-    """
-    Enrich ONLY the selected sessions with CO assets (docDB + S3 location).
-
-    Reuses the builder internals so the slow S3 globbing touches only the
-    sampled sessions, then rewrites the session table with the CO columns.
-    """
-    _banner(f"Enriching {len(session_df)} selected sessions with CO assets (docDB + S3)")
-    subjects = sorted(session_df["subject_id"].astype(str).unique().tolist())
-    print(f"  Unique subjects in selection: {len(subjects)}")
-
-    session_df = parquet_builder._enrich_with_co_assets(session_df, subjects, verbose=True)
-    # Refresh the preferred NWB source now that CO assets are populated.
-    session_df["nwb_data_source"] = session_df.apply(
-        parquet_builder._assign_nwb_data_source, axis=1
-    )
-    # Rewrite the session table so it reflects only the (enriched) selection.
-    parquet_builder._write_dataframe_as_parquet(session_df, cfg.session_out)
-
-    has_co = session_df["co_s3_nwb_uri"].notna() & (session_df["co_s3_nwb_uri"] != "")
-    print(f"  With CO asset : {has_co.sum()}   Local only : {(~has_co).sum()}")
-    return session_df
 
 
 def build_trial_event_tables(cfg: Config, session_df, nwb_index: dict) -> dict:
@@ -208,11 +207,10 @@ def main(cfg: Config) -> dict:
     nwb_index = parquet_builder.build_nwb_file_index()
     print(f"  Total NWB files indexed: {len(nwb_index)}")
 
-    # Sample EARLY from Han metadata, BEFORE any docDB/S3 (CO-asset) work, so a
-    # --limit run only enriches + S3-globs the sampled sessions.
-    session_df = build_session_pool(cfg)
+    # Build the complete session table (Han ∪ CO universe, CO assets attached),
+    # then optionally subsample for a quick --limit test, then build the tables.
+    session_df = build_sessions(cfg)
     session_df = select_sessions(cfg, session_df)
-    session_df = enrich_selected(cfg, session_df)
 
     summary = build_trial_event_tables(cfg, session_df, nwb_index)
     print_summary(cfg, summary)
@@ -239,6 +237,9 @@ def parse_args(argv=None) -> Config:
     p.add_argument("--no-coalesce", action="store_true",
                    help="keep one parquet file per session instead of merging each "
                         "subject's sessions into a single sorted file (the default)")
+    p.add_argument("--co-cache", default=None,
+                   help="dev: parquet path to cache the ~137s docDB discovery "
+                        "(loaded if present, else fetched once and saved)")
     args = p.parse_args(argv)
     return Config(
         out_dir=args.out_dir,
@@ -246,6 +247,7 @@ def parse_args(argv=None) -> Config:
         full_rebuild=args.full_rebuild,
         n_workers=args.n_workers,
         coalesce=not args.no_coalesce,
+        co_cache=args.co_cache,
     )
 
 
