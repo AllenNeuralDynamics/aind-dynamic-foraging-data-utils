@@ -9,6 +9,7 @@ Test structure:
      (uses real NWB files from tests/nwb/)
 """
 
+import importlib.util
 import os
 import tempfile
 import unittest
@@ -19,6 +20,11 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from aind_dynamic_foraging_data_utils.foraging_cache.util import parquet_builder
+
+# The session-table round-trip tests exercise build_session_table, whose session
+# source is the CO-internal aind_analysis_arch_result_access (Han pipeline). It is
+# not a pip dependency, so skip those tests where it isn't installed (e.g. CI).
+_HAS_HAN_PIPELINE = importlib.util.find_spec("aind_analysis_arch_result_access") is not None
 
 # ---------------------------------------------------------------------------
 # 1. _parse_nwb_filename
@@ -126,6 +132,7 @@ class TestBuildNwbFileIndex(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+@unittest.skipUnless(_HAS_HAN_PIPELINE, "aind_analysis_arch_result_access not installed")
 class TestBuildSessionTableRoundTrip(unittest.TestCase):
     """
     Test build_session_table with a minimal mocked session DataFrame,
