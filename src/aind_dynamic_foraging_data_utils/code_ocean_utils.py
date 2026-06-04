@@ -118,19 +118,16 @@ def get_assets(  # NOQA: C901
     else:
         stage_filter = {}
 
-    # Do we want processed or raw assets
-    if processed:
-        processed_string = "_.*processed_[0-9-_]*"
-    else:
-        processed_string = (
-            "_[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
-        )
+    # Do we want processed (derived) or raw assets. Filter on the canonical
+    # data_description.data_level metadata field rather than a name regex.
+    data_level_filter = {"data_description.data_level": "derived" if processed else "raw"}
 
-    # Query based on subject id
+    # Query based on subject id (name regex now only constrains the subject;
+    # the processed/raw distinction is handled by data_level_filter above).
     if len(subjects) == 0:
         print("Query will be slow without explicit subject ids")
         subject_filter = {
-            "name": {"$regex": "^behavior_[0-9]*{}$".format(processed_string)},
+            "name": {"$regex": "^behavior_[0-9]"},
         }
         # Return only essential information for performance
         projection = {
@@ -144,11 +141,7 @@ def get_assets(  # NOQA: C901
         }
     else:
         subject_filter = {
-            "name": {
-                "$regex": "^behavior_("
-                + "|".join([str(x) for x in subjects])
-                + "){}$".format(processed_string)
-            },
+            "name": {"$regex": "^behavior_(" + "|".join([str(x) for x in subjects]) + ")_"},
         }
         # Return all information
         projection = None
@@ -161,6 +154,7 @@ def get_assets(  # NOQA: C901
                 **task_filter,
                 **modality_filter,
                 **stage_filter,
+                **data_level_filter,
                 **extra_filter,
             },
             projection=projection,
@@ -219,7 +213,7 @@ def get_dynamic_foraging_assets(pagination=True, paginate_batch_size=5000, proje
             {"session.data_streams.software.name": "dynamic-foraging-task"},
             {"session.stimulus_epochs.software.name": "dynamic-foraging-task"},
         ],
-        "name": {"$regex": ".*processed.*"},
+        "data_description.data_level": "derived",
     }
     if projection is None:
         projection = {
@@ -241,13 +235,21 @@ def get_dynamic_foraging_assets(pagination=True, paginate_batch_size=5000, proje
 
     df = pd.DataFrame(records)
 
+    # A derived dynamic-foraging session can have several derived assets (the
+    # behavior-processed NWB, plus PoseTracking, sorted-opto-bandpass, ...). Only
+    # the behavior-processed asset (named "<session_name>_processed_<...>") carries
+    # the trials/events NWB, so keep only those. str.extract also yields the clean
+    # session_name ("behavior_<subj>_<date>_<time>"); other-pipeline assets -> NaN.
+    session_re = r"^(behavior_\d+_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})_processed"
+    df["session_name"] = df["name"].str.extract(session_re)
+    df = df[df["session_name"].notna()].copy()
+
     # Dedup to the latest processed asset per session (mirror get_assets()).
-    df["session_name"] = [n.split("_processed")[0] for n in df["name"]]
     df = df.sort_values("name").drop_duplicates(subset="session_name", keep="last").copy()
 
     # Code Ocean asset id from external_links: {"Code Ocean": ["<asset-id>"]}.
     df["code_ocean_asset_id"] = [
-        link["Code Ocean"][0] if isinstance(link, dict) and "Code Ocean" in link else ""
+        link["Code Ocean"][0] if isinstance(link, dict) and link.get("Code Ocean") else ""
         for link in df["external_links"]
     ]
     # Flatten the nested subject.subject_id projection.
