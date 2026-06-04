@@ -317,6 +317,12 @@ Then ask your question in plain English.
 - `COUNT(*)` over the trial table → **~1 s**.
 - **Return-loop join** (filter sessions → pull all their trials + events) → **~44 s** over S3.
 
+Querying the cache (solid) vs the legacy per-session NWB route (dashed, extrapolated) — **~4
+orders of magnitude faster** at full-dataset scale, because the cache eliminates the per-session
+docDB query that dominates the legacy path:
+
+![Cache vs legacy fetch time](validate/cache_vs_legacy.png)
+
 Memory scales with the columns you select (projection ≈ 17× less RAM); per-subject coalescing
 keeps file-open overhead small even for full-width loads. See [`README_build.md`](README_build.md)
-for build performance and the full validation results.
+for build performance and the full validation results (data-equivalence + apples-to-apples vs Han).
