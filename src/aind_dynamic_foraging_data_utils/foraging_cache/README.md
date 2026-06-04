@@ -188,7 +188,7 @@ duckdb.sql(f"DESCRIBE SELECT * FROM {READ_EVENTS}").df()                        
   `auto_waterL = 0 AND auto_waterR = 0`. `reward_trials` counts earned (non-autowater) rewards.
 - **`animal_response`:** 0 = left, 1 = right, 2 = ignore.
 - **Performance:** *filter by `subject_id`* (prunes partitions) and *project only the columns
-  you need*. `SELECT *` over trials is ~21 GB; the choice/reward 5-column slice is ~1.2 GB / ~3 s.
+  you need*. `SELECT *` over trials is ~21 GB; the choice/reward 5-column slice is ~2 GB / ~6 s.
 - **`is_bad_bowen_session = TRUE`** marks unreliable bonsai data — usually exclude it.
 - **NULLs:** `union_by_name` fills reader-specific columns with `NULL`; numeric comparisons
   (`> 0.8`) drop NULL/NaN rows.
@@ -312,7 +312,7 @@ Then ask your question in plain English.
 
 ## Read performance (full prod cache — ~23.6k sessions, 12.5M trials, over S3)
 
-- **5-column projection** (choice/reward/prob) → **~3 s, ~1.2 GB** — the normal analysis pattern.
+- **5-column projection** (choice/reward/prob, + keys) → **~6 s, ~2 GB** — the normal analysis pattern.
 - full 103-column trial table → **~53 s, ~21 GB**.
 - `COUNT(*)` over the trial table → **~1 s**.
 - **Return-loop join** (filter sessions → pull all their trials + events) → **~44 s** over S3.
@@ -331,7 +331,7 @@ chain with a single parquet scan:
 |---|---|---|
 | 1 session, trials | ~1 s | ~23 s |
 | 100 sessions, trials | ~3 s | **~40 min** |
-| Full DB (~23.6k), 5-col | **~3 s** | **~6 days** |
+| Full DB (~23.6k), 5-col | **~6 s** | **~6 days** |
 | Full DB, full 103-col | **~53 s** | ~6 days |
 
 → **~4 orders of magnitude faster** at full-dataset scale, verified equivalent to a direct
@@ -340,6 +340,7 @@ dashed = legacy `nwb_utils` (per-session cost, extrapolated):
 
 ![Cache vs legacy nwb_utils fetch time](validate/cache_vs_legacy.png)
 
-Memory scales with the columns you select (projection ≈ 17× less RAM); per-subject coalescing
+Memory scales with the columns you select (a few columns ≈ 10× less RAM than the full width);
+per-subject coalescing
 keeps file-open overhead small even for full-width loads. See [`README_build.md`](README_build.md)
 for build performance and the full validation results (data-equivalence + apples-to-apples vs Han).
