@@ -57,6 +57,7 @@ class Config:
     full_rebuild: bool = False  # ignore build metadata; reprocess everything
     random_seed: int = 42
     n_workers: Optional[int] = None  # worker processes; None -> CO_CPUS-1
+    coalesce: bool = True  # merge each subject's sessions into one parquet file
 
     @property
     def is_s3(self) -> bool:
@@ -77,6 +78,10 @@ class Config:
     @property
     def meta_out(self) -> str:
         return f"{self.out_dir}/build_metadata.json"
+
+    @property
+    def log_csv(self) -> str:
+        return f"{self.out_dir}/processing_log.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +155,8 @@ def build_trial_event_tables(cfg: Config, session_df, nwb_index: dict) -> dict:
         build_metadata_path=cfg.meta_out,
         incremental=not cfg.full_rebuild,
         n_workers=cfg.n_workers,
+        coalesce=cfg.coalesce,
+        log_csv_path=cfg.log_csv,
         verbose=True,
     )
 
@@ -286,12 +293,16 @@ def parse_args(argv=None) -> Config:
                         "the default, and beyond ~64 there's no gain (the "
                         "create_df_trials parse saturates the cores). RAM is not "
                         "the limit (~21 GB at 128 workers).")
+    p.add_argument("--no-coalesce", action="store_true",
+                   help="keep one parquet file per session instead of merging each "
+                        "subject's sessions into a single sorted file (the default)")
     args = p.parse_args(argv)
     return Config(
         out_dir=args.out_dir,
         limit=args.limit,
         full_rebuild=args.full_rebuild,
         n_workers=args.n_workers,
+        coalesce=not args.no_coalesce,
     )
 
 

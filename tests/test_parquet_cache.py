@@ -358,6 +358,50 @@ class TestTrialEventRoundTrip(unittest.TestCase):
             # All sessions from run 1 should now be in the "already processed" set
             # so they don't appear as n_skipped either — they're pre-filtered out
 
+    def test_coalesce_and_triage_log(self):
+        """
+        With coalesce=True (default), each subject dir holds exactly one
+        {subject_id}.parquet, and the triage CSV records one row per session.
+        """
+        import glob
+
+        nwb_files = glob.glob(os.path.join(self.TEST_NWB_DIR, "*.nwb"))
+        session_df = self._build_minimal_session_df(nwb_files)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trial_prefix = os.path.join(tmpdir, "trial_table")
+            event_prefix = os.path.join(tmpdir, "event_table")
+            log_csv = os.path.join(tmpdir, "processing_log.csv")
+            nwb_index = parquet_builder.build_nwb_file_index(
+                bonsai_dir=self.TEST_NWB_DIR, bpod_dir=self.TEST_NWB_DIR
+            )
+
+            summary = parquet_builder.build_trial_and_event_tables(
+                session_df=session_df,
+                trial_output_prefix=trial_prefix,
+                event_output_prefix=event_prefix,
+                nwb_file_index=nwb_index,
+                incremental=False,
+                coalesce=True,
+                log_csv_path=log_csv,
+                verbose=False,
+            )
+            self.assertEqual(summary["n_failed"], 0)
+
+            # One coalesced file per subject partition (named {subject_id}.parquet)
+            for subdir in glob.glob(os.path.join(trial_prefix, "subject_id=*")):
+                sid = os.path.basename(subdir).split("subject_id=")[1]
+                self.assertEqual(sorted(os.listdir(subdir)), [f"{sid}.parquet"])
+
+            # Triage CSV: one row per processed session, with the key columns
+            self.assertTrue(os.path.exists(log_csv))
+            log = pd.read_csv(log_csv)
+            self.assertEqual(len(log), summary["n_processed"])
+            for col in ["session_id", "subject_id", "status", "data_source",
+                        "reader", "n_trials", "n_events", "error"]:
+                self.assertIn(col, log.columns)
+            self.assertTrue((log["status"] == "ok").all())
+
 
 if __name__ == "__main__":
     unittest.main()
