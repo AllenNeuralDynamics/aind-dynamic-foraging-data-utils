@@ -6,7 +6,7 @@ Three tables are built:
   2. trial_table/           - Hive-partitioned by subject_id; one row per trial
   3. event_table/           - Hive-partitioned by subject_id; one row per behavioral event
 
-S3 target: s3://aind-behavior-data/foraging_cache/
+S3 target: s3://aind-scratch-data/aind-dynamic-foraging-cache/
 
 Data sources (priority order for NWB files):
   1. CO asset S3 URI        -- best; from docDB (AIND pipeline, ~2/3 of sessions)
@@ -62,8 +62,8 @@ _WORKER_TRIAL_PREFIX = None
 _WORKER_EVENT_PREFIX = None
 
 # ---- Default S3 paths ----
-S3_CACHE_BUCKET = "aind-behavior-data"
-S3_CACHE_PREFIX = "foraging_cache"
+S3_CACHE_BUCKET = "aind-scratch-data"
+S3_CACHE_PREFIX = "aind-dynamic-foraging-cache"
 SESSION_TABLE_S3_URI = f"s3://{S3_CACHE_BUCKET}/{S3_CACHE_PREFIX}/session_table.parquet"
 TRIAL_TABLE_S3_PREFIX = f"s3://{S3_CACHE_BUCKET}/{S3_CACHE_PREFIX}/trial_table"
 EVENT_TABLE_S3_PREFIX = f"s3://{S3_CACHE_BUCKET}/{S3_CACHE_PREFIX}/event_table"

@@ -1,5 +1,5 @@
 """
-Build (or incrementally extend) the foraging parquet cache.
+Main entry point to build (or incrementally extend) the foraging parquet cache.
 
 Runs the full pipeline over ALL sessions in the Han session table, exercising
 all three NWB routes (see references/data-sources.md):
@@ -12,25 +12,29 @@ Incremental by default: only sessions not already recorded in
 ``build_metadata.json`` are processed, so re-running cheaply adds new sessions.
 Pass ``--full-rebuild`` to reprocess everything.
 
+To query the built cache (the read-back / "return loop"), use the companion
+``query_examples`` module or ``query_examples.ipynb`` — querying is intentionally
+kept out of this build script.
+
 Output target:
   - Default is a local scratch directory (safe for dev iteration).
   - Point ``--out-dir`` at the canonical S3 prefix to write the production
-    database:  ``--out-dir s3://aind-behavior-data/foraging_cache``
+    database:  ``--out-dir s3://aind-scratch-data/aind-dynamic-foraging-cache``
 
 Run:
     # incremental local build (default scratch dir)
-    python -m aind_dynamic_foraging_data_utils.foraging_cache.sample_cache_trigger
+    python -m aind_dynamic_foraging_data_utils.foraging_cache.build_cache
 
     # production build/update on S3 (--n-workers 64 ~= 4x faster; see --help)
-    python -m aind_dynamic_foraging_data_utils.foraging_cache.sample_cache_trigger \\
-        --out-dir s3://aind-behavior-data/foraging_cache --n-workers 64
+    python -m aind_dynamic_foraging_data_utils.foraging_cache.build_cache \\
+        --out-dir s3://aind-scratch-data/aind-dynamic-foraging-cache --n-workers 64
 
     # quick smoke test on a random 300-session subset (spans all three routes)
-    python -m aind_dynamic_foraging_data_utils.foraging_cache.sample_cache_trigger --limit 300
+    python -m aind_dynamic_foraging_data_utils.foraging_cache.build_cache --limit 300
 
 Or drive it programmatically (the module is import-safe — nothing runs on import):
-    from aind_dynamic_foraging_data_utils.foraging_cache import sample_cache_trigger as t
-    t.main(t.Config(out_dir="/root/capsule/scratch/tmp/foraging_cache", limit=300))
+    from aind_dynamic_foraging_data_utils.foraging_cache import build_cache as b
+    b.main(b.Config(out_dir="/root/capsule/scratch/tmp/foraging_cache", limit=300))
 """
 
 import argparse
@@ -45,7 +49,7 @@ logger = logging.getLogger(__name__)
 
 # Default output: local scratch (never /tmp). Use --out-dir for S3 prod.
 DEFAULT_OUT_DIR = "/root/capsule/scratch/tmp/foraging_cache"
-PROD_S3_OUT_DIR = "s3://aind-behavior-data/foraging_cache"
+PROD_S3_OUT_DIR = "s3://aind-scratch-data/aind-dynamic-foraging-cache"
 
 
 @dataclass
@@ -161,66 +165,6 @@ def build_trial_event_tables(cfg: Config, session_df, nwb_index: dict) -> dict:
     )
 
 
-def run_example_queries(cfg: Config) -> None:
-    """Demonstrate the standard DuckDB query patterns against the built tables."""
-    import duckdb
-
-    _banner("EXAMPLE QUERIES")
-
-    read_trials = (
-        f"read_parquet('{cfg.trial_out}/**/*.parquet', "
-        "hive_partitioning=true, union_by_name=true)"
-    )
-    read_events = (
-        f"read_parquet('{cfg.event_out}/**/*.parquet', "
-        "hive_partitioning=true, union_by_name=true)"
-    )
-    sel_cte = f"""
-        WITH sel AS (
-            SELECT _session_id, subject_id, session_date, task, foraging_eff
-            FROM read_parquet('{cfg.session_out}')
-            WHERE task LIKE '%Uncoupled%' AND foraging_eff > 0.8
-        )
-    """
-
-    print("\n--- Session query: Uncoupled tasks with foraging_eff > 0.8 ---")
-    selected = duckdb.sql(f"""
-        SELECT _session_id, subject_id, session_date, finished_trials, foraging_eff, task
-        FROM read_parquet('{cfg.session_out}')
-        WHERE task LIKE '%Uncoupled%' AND foraging_eff > 0.8
-        ORDER BY session_date, subject_id
-    """).df()
-    print(selected.to_string(index=False))
-
-    print(f"\n--- Trial history for {len(selected)} selected sessions ---")
-    df_trials_all = duckdb.sql(f"""
-        {sel_cte}
-        SELECT s.subject_id, s.session_date, s.task, s.foraging_eff,
-               t.session_id, t.animal_response, t.earned_reward,
-               t.reward_probabilityL, t.reward_probabilityR,
-               t.rewarded_historyL, t.rewarded_historyR
-        FROM {read_trials} t
-        JOIN sel s ON t.session_id = s._session_id
-        WHERE CAST(t.subject_id AS VARCHAR) IN (SELECT subject_id FROM sel)
-        ORDER BY s.subject_id, s.session_date
-    """).df()
-    print(f"  Total trials across {len(selected)} sessions : {len(df_trials_all)}")
-    print(df_trials_all.head(10).to_string(index=False))
-
-    print(f"\n--- Event history for {len(selected)} selected sessions ---")
-    df_events_all = duckdb.sql(f"""
-        {sel_cte}
-        SELECT s.subject_id, s.session_date, e.session_id, e.timestamps, e.event, e.data
-        FROM {read_events} e
-        JOIN sel s ON e.session_id = s._session_id
-        WHERE CAST(e.subject_id AS VARCHAR) IN (SELECT subject_id FROM sel)
-        ORDER BY s.subject_id, s.session_date, e.timestamps
-    """).df()
-    print(f"  Total events across {len(selected)} sessions : {len(df_events_all)}")
-    print(f"  Event types : {sorted(df_events_all['event'].unique().tolist())}")
-    print(df_events_all.head(10).to_string(index=False))
-
-
 def print_summary(cfg: Config, summary: dict) -> None:
     """Print the build-result breakdown."""
     _banner("BUILD SUMMARY")
@@ -272,7 +216,6 @@ def main(cfg: Config) -> dict:
 
     summary = build_trial_event_tables(cfg, session_df, nwb_index)
     print_summary(cfg, summary)
-    run_example_queries(cfg)
     return summary
 
 
