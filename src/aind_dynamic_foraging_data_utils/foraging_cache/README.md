@@ -117,9 +117,11 @@ docDB's `HH-MM-SS` often **drifts** from Han's for the same session, so:
 | bonsai S3 (local Han NWB) | **legacy reader** |
 | bpod S3 (local Han NWB) | **legacy reader** (+ h5py fallback for old files) |
 
-The AIND reader runs **only on CO assets**. On **any** error it raises and we **fall back to
-the legacy reader on the local Han NWB** (if one exists), logging the reason + kind. CO-only
-sessions with no local NWB and an unreadable asset are the only hard failures (logged).
+The AIND reader runs **only on CO assets**. On **any** error (quality assertion, parse error,
+empty/invalid/missing S3 location), it falls back to the **legacy reader on the first NWB that
+reads**: the **local Han NWB** if present, then the **CO asset's own NWB** (a lenient read that
+skips the AIND assertions) — logging the reason + kind. Only genuinely unreadable assets (NWB
+missing at its S3 location, or an NWB with no trials table) hard-fail (logged).
 
 ### 5. CO NWB S3 path by construction, not glob
 The NWB lives at a deterministic `{location}/nwb/{session_name}.nwb`, so we build that string
@@ -149,6 +151,17 @@ After the parallel per-session writes, each subject's files are merged into one 
 ### 9. Bad-Bowen guard
 Sessions listed in `Bowen_IncompleteSessions-081225.csv` have unreliable bonsai data; flagged
 `is_bad_bowen_session` and only trusted via their CO asset (never the local bonsai NWB).
+
+### 10. Cross-reader schema normalization
+Three readers (AIND, legacy bonsai, legacy bpod) emit slightly different trial schemas. On
+write (`_write_session_parquet`) we normalize so the partitioned tables stay queryable:
+- `subject_id` is always cast to string (matches the `subject_id=` partition dir type);
+- `bpod_backup_*` columns (raw hardware backup, ~22 cols, only in the legacy bpod reader) are
+  dropped;
+- a canonical type map (`_CANONICAL_TRIAL_COL_TYPES` / `_CANONICAL_EVENT_COL_TYPES`) resolves
+  cross-session type conflicts (highest-priority type wins: string > double > int64 > bool).
+
+Queries then use `union_by_name=true` to merge any remaining per-reader column differences.
 
 ---
 
@@ -198,21 +211,32 @@ df = duckdb.sql(f"""
 
 ---
 
-## Performance (measured)
+## Performance (measured on the full prod cache — ~23.6k sessions, 12.5M trials, S3)
 
-- **Build (full ~24k sessions, 64 workers):** ~1–1.5 h, dominated by CO-asset S3 reads;
-  incremental re-runs are cheap. docDB discovery ≈ 137 s (cache it for dev with `--co-cache`).
-- **Loading trials into memory** (coalesced; full DB ≈ 12.5M trials):
-  - **column projection** (e.g. choice/reward/prob) → **~1.2 GB**, tens of seconds — the
-    normal analysis pattern.
-  - full ~103-column table → ~21 GB, ~1–2 min.
-  Memory scales with columns selected; coalescing keeps the file-open overhead small.
+- **Build (full, 64 workers):** ~1 h, dominated by ~15k CO-asset S3 reads; incremental
+  re-runs only touch new/unprocessed sessions (cheap). docDB discovery ≈ 137 s (cache it for
+  dev with `--co-cache`).
+- **Loading trials into memory from S3** (coalesced, ~900 files, via DuckDB → pandas):
+  - **5-column projection** (choice/reward/prob) → **~4 s, ~1.2 GB** — the normal analysis pattern.
+  - full 103-column table → **~53 s, ~21 GB**.
+  - `COUNT(*)` over the trial table → ~1 s.
+- **Return-loop join** (filter sessions → pull all their trials + events: 1.27M trials +
+  13.4M events) → **~44 s** directly over S3.
+
+Memory scales with columns selected (projection ≈ 17× less RAM); coalescing keeps the
+file-open overhead small even for the full-width load.
 
 ---
 
 ## Known limitations
-- **CO-only sessions that the AIND reader can't read** have no Han NWB to fall back to → they
-  hard-fail (logged in `processing_log.csv`). Rare (~0.2%).
+- **Genuinely unreadable CO assets hard-fail** (~14 / 23.9k ≈ 0.06%, logged in
+  `processing_log.csv` with `status=failed`): the NWB is missing at its S3 location, or the
+  NWB has no trials table — no reader (AIND or legacy) can recover those.
 - **Multi-session-per-day CO sessions** without a Han exact match are skipped, not merged —
   see `co_skipped_sessions.csv` and [issue #146](https://github.com/AllenNeuralDynamics/aind-dynamic-foraging-data-utils/issues/146).
+- **~269 sessions are skipped** ("no NWB found"): in Han's table but with no local NWB and no
+  CO asset (e.g. bad-Bowen without a CO asset, or NWB not mounted).
+- Benign `s3fs`/`aiobotocore` "attached to a different loop" tracebacks during worker S3
+  teardown are **not failures**; the `asyncio` logger is quieted in `build_cache` to keep logs
+  readable. Trust the builder's `Failed to process` lines + `BUILD SUMMARY` + `processing_log.csv`.
 - Build runs inside Code Ocean (local NWB mounts under `/data/`, `CO_CPUS` for worker count).
