@@ -406,6 +406,37 @@ def _merge_han_and_co(df_han, df_co, verbose=True):  # noqa: C901
     return df_union, df_skipped
 
 
+def _parse_co_curriculum(value):
+    """
+    Parse a docDB ``curriculum_in_use`` string into Han's (curriculum_name, curriculum_version).
+
+    ``"Uncoupled Baiting (v2.3@1.0)"`` -> ``("Uncoupled Baiting", "v2.3")`` (the ``@...`` schema
+    suffix is dropped); ``"off curriculum"`` -> ``("None", "None")`` (Han's off-curriculum
+    convention); missing -> ``(NA, NA)``; an unrecognised string -> ``(<raw>, NA)``.
+    """
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return (pd.NA, pd.NA)
+    text = str(value).strip()
+    if text in ("None", "off curriculum", "off_curriculum", ""):
+        return ("None", "None")
+    m = re.match(r"^(.+?)\s*\(([^@)]+)@?[^)]*\)\s*$", text)
+    if m:
+        return (m.group(1).strip(), m.group(2).strip())
+    return (text, pd.NA)
+
+
+def _map_co_stage(value):
+    """Map docDB ``stage_in_use`` to Han's current_stage_actual ('None' for off/unknown)."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return pd.NA
+    text = str(value).strip()
+    if text in ("unknown training stage", "None", ""):
+        return "None"
+    if text == "final":
+        return "STAGE_FINAL"
+    return text
+
+
 def _fill_co_only_metadata(new_rows, co_new):
     """
     Surface descriptive metadata for CO-only sessions (those absent from Han).
@@ -420,6 +451,14 @@ def _fill_co_only_metadata(new_rows, co_new):
         """Return the named co_new column, or an all-NA Series if it's absent."""
         return co_new[name] if name in co_new.columns else pd.Series([pd.NA] * len(co_new))
 
+    def _as_str(v):
+        """Coerce a task-GUI value to a scalar string (lists -> joined); NaN/None -> None."""
+        if isinstance(v, (list, tuple)):
+            return ",".join(map(str, v)) if len(v) else None
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None
+        return str(v)
+
     task = _col("co_task")
     if "co_session_type" in co_new.columns:
         task = task.fillna(co_new["co_session_type"])
@@ -428,9 +467,11 @@ def _fill_co_only_metadata(new_rows, co_new):
     modality = _col("co_modality").fillna("").astype(str)
     rig_type = modality.map(lambda m: "ephys" if "ephys" in m else "training")
 
-    new_rows["task"] = task.to_numpy()
-    new_rows["curriculum_in_use"] = _col("curriculum_in_use").to_numpy()
-    new_rows["stage_in_use"] = _col("stage_in_use").to_numpy()
+    curr = _col("curriculum_in_use").map(_parse_co_curriculum)
+    new_rows["task"] = task.map(_as_str).to_numpy()
+    new_rows["curriculum_name"] = [c[0] for c in curr]            # parsed into Han's columns
+    new_rows["curriculum_version"] = [c[1] for c in curr]
+    new_rows["current_stage_actual"] = _col("stage_in_use").map(_map_co_stage).to_numpy()
     new_rows["institute"] = "AIND"
     new_rows["hardware"] = "bonsai"
     new_rows["rig_type"] = rig_type.to_numpy()
