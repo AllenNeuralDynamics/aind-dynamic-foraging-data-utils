@@ -98,6 +98,11 @@ trials = fetch_trials(sel, columns=["animal_response", "earned_reward"])     # t
   `current_stage_actual IN ('STAGE_FINAL','GRADUATED')` for fully-trained sessions), metrics
   (`foraging_eff`, `finished_trials`, …). NB `data_source` (Han rig/institute composite) ≠
   `nwb_data_source` (`co_asset`/`bonsai_s3`/`bpod_s3`).
+- **`curriculum_name` ≠ `task`**: `curriculum_name` = the training *program* (named after its
+  **target task**, constant as the mouse progresses); `task` = the paradigm *actually run that
+  session*, which changes by stage as the curriculum ramps difficulty (e.g. Uncoupled Baiting
+  curriculum runs Coupled Baiting in early stages → Uncoupled Baiting at STAGE_3→FINAL/GRADUATED).
+  Filter `curriculum_name` for enrollment, `task` for what ran (~3.2k on-curriculum sessions differ).
 
 (To build/update the cache, see `build_cache.py` / `README_build.md` — not needed for analysis.)
 

@@ -197,6 +197,15 @@ joining to trials/events. The columns you'll filter on most:
 > graduation criteria the stage is relabeled `'GRADUATED'` — but **both run the identical task
 > parameters**. So for "fully-trained" sessions, treat them as one:
 > `current_stage_actual IN ('STAGE_FINAL', 'GRADUATED')`.
+>
+> **Curriculum vs. `task` — related but not the same.** `curriculum_name` is the auto-training
+> *program* a mouse is enrolled in (named after its **target task**, and constant as the mouse
+> progresses); `task` is the paradigm **actually run that session**, which changes by stage
+> because the curriculum ramps difficulty. E.g. the *Uncoupled Baiting* curriculum runs the
+> easier **Coupled Baiting** task in `STAGE_1_WARMUP`→`STAGE_2`, then switches to **Uncoupled
+> Baiting** from `STAGE_3`→`STAGE_FINAL`/`GRADUATED`. So filter **`curriculum_name`** to pick mice
+> *enrolled in* a program, and **`task`** to pick sessions that *actually ran* a paradigm — they
+> match for most sessions but differ for ~3.2k on-curriculum sessions (the early stages).
 
 ---
 
