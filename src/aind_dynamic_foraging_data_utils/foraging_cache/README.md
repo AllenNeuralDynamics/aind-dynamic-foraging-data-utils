@@ -46,7 +46,7 @@ Three tables on a **public** S3 bucket (`s3://aind-scratch-data/aind-dynamic-for
 |---|---|---|---|
 | **session** | `session_table.parquet` | one row per session | ~24k rows × 160 cols (~MB) |
 | **trial** | `trial_table/subject_id=<id>/…parquet` | one row per trial | ~12.5M rows × 103 cols (~21 GB) |
-| **event** | `event_table/subject_id=<id>/…parquet` | one row per behavioral event | ~13.4M rows × 10 cols |
+| **event** | `event_table/subject_id=<id>/…parquet` | one row per behavioral event | ~117M rows × 10 cols (~9 events / trial) |
 
 The trial/event tables are **Hive-partitioned by `subject_id`** and coalesced to one file per
 subject. The bucket is **public — DuckDB reads `s3://` natively with no AWS credentials or

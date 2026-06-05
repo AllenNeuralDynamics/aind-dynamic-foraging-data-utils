@@ -12,7 +12,7 @@ credentials needed**.
 s3://aind-scratch-data/aind-dynamic-foraging-cache/
 ├── session_table.parquet                       # flat, ~24k rows × 160 cols
 ├── trial_table/subject_id=<id>/<id>.parquet     # Hive-partitioned, 1 file/subject (~12.5M × 103)
-└── event_table/subject_id=<id>/<id>.parquet     # Hive-partitioned, 1 file/subject (~13.4M × 10)
+└── event_table/subject_id=<id>/<id>.parquet     # Hive-partitioned, 1 file/subject (~117M × 10)
 ```
 
 Importable: `from aind_dynamic_foraging_data_utils.foraging_cache import SESSION_DB, TRIAL_DB, EVENT_DB`
