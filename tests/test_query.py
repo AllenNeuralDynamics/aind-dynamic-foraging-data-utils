@@ -64,6 +64,7 @@ class TestQueryHelpers(unittest.TestCase):
     """End-to-end helper tests against a local build."""
 
     def test_select_fetch_and_escape_hatch(self):
+        """select_sessions -> fetch_trials/fetch_events + the read_trials escape hatch."""
         with tempfile.TemporaryDirectory() as tmpdir:
             session_path, trial_prefix, event_prefix = _build_local_cache(tmpdir)
 
@@ -103,6 +104,7 @@ class TestQueryHelpers(unittest.TestCase):
             self.assertEqual(n_scoped, n_all)  # only subject(s) in this tiny cache
 
     def test_read_trials_edge_cases(self):
+        """read_trials: full-glob fallback and empty-source path for a missing subject."""
         with tempfile.TemporaryDirectory() as tmpdir:
             _, trial_prefix, _ = _build_local_cache(tmpdir)
             # subjects=None -> full glob
@@ -112,6 +114,7 @@ class TestQueryHelpers(unittest.TestCase):
             self.assertEqual(int(duckdb.sql(f"SELECT COUNT(*) c FROM {empty_src}").df().c[0]), 0)
 
     def test_fetch_empty_selection(self):
+        """fetch_trials returns an empty frame when the session selection is empty."""
         with tempfile.TemporaryDirectory() as tmpdir:
             session_path, trial_prefix, _ = _build_local_cache(tmpdir)
             empty = query.select_sessions("foraging_eff > 999", base=session_path)
