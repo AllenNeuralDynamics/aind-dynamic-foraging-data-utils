@@ -2,10 +2,22 @@
 
 A Hive-partitioned **parquet database** of AIND dynamic-foraging behavior (one row per
 session / trial / event), assembled from NWB files across three sources. Pull behavior for
-arbitrary mice / sessions — or the whole dataset — in **seconds** with DuckDB/pandas, instead
-of opening thousands of NWBs.
+arbitrary mice / sessions — or the whole dataset — in **seconds** with a few Python calls (the
+**query helpers**, DuckDB + pandas under the hood), instead of opening thousands of NWBs.
 
-> 💡 **New to DuckDB? Let an LLM write the query.** This README is self-contained: paste the
+> 🚀 **Start with the query helpers** — importable from `aind_dynamic_foraging_data_utils.foraging_cache`,
+> they wrap DuckDB and hand back a pandas DataFrame:
+> - **`select_sessions(where=…, subjects=…, columns=…)`** — filter the (small) session table on any
+>   metric / metadata (or a subject list); returns a DataFrame of the selected sessions.
+> - **`fetch_trials(sel, …)` / `fetch_events(sel, …)`** — pull those sessions' trials / events with the
+>   session metadata joined onto every row, reading only the selected subjects' partitions (fast).
+> - **`read_trials(subjects)` / `read_events(subjects)`** — escape hatch: a fast, partition-scoped
+>   `read_parquet(...)` clause to drop into any DuckDB SQL you write (aggregations, windows, joins).
+>
+> See [**Quick start**](#quick-start--the-query-helpers) for runnable examples; drop to native SQL
+> only when the helpers don't cover what you need.
+
+> 💡 **Need custom DuckDB SQL? Let an LLM write it.** This README is self-contained: paste the
 > whole file into the LLM of your choice (Claude / ChatGPT / Cursor / …) as context, then ask
 > in plain English (e.g. *"trials for subjects 754372 and 758435 with foraging_eff > 0.8"*).
 > It will return runnable DuckDB that follows the conventions below — including the key
