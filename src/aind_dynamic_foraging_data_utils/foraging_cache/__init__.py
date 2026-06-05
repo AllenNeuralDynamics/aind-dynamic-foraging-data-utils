@@ -11,12 +11,15 @@ Implementation modules live in the ``util`` sub-package:
   util.nwb_reader_legacy – Han pipeline reader adapted from process_nwbs.py
   util.postprocess       – per-subject coalescing + triage CSV log
 
-Default read targets for the production database (``SESSION_DB`` / ``TRIAL_DB`` /
-``EVENT_DB``) live on a public S3 bucket, so reading needs no AWS credentials::
+Reading uses the query helpers in ``query`` (DuckDB under the hood). Reach for the simple
+helpers first; drop to native SQL when you need more::
 
-    import duckdb
-    from aind_dynamic_foraging_data_utils.foraging_cache import SESSION_DB, TRIAL_DB
-    duckdb.sql(f"SELECT * FROM read_parquet('{SESSION_DB}')").df()
+    from aind_dynamic_foraging_data_utils.foraging_cache import select_sessions, fetch_trials
+    sel = select_sessions("task LIKE '%Uncoupled%' AND foraging_eff > 0.8")
+    trials = fetch_trials(sel, columns=["animal_response", "earned_reward"])
+
+The default read targets (``SESSION_DB`` / ``TRIAL_DB`` / ``EVENT_DB``) live on a public S3
+bucket, so reading needs no AWS credentials.
 """
 
 from aind_dynamic_foraging_data_utils.foraging_cache.util.parquet_builder import (  # noqa: F401
@@ -25,9 +28,17 @@ from aind_dynamic_foraging_data_utils.foraging_cache.util.parquet_builder import
     build_trial_and_event_tables,
 )
 
-# Canonical production parquet database on S3 (public bucket — no credentials to read).
-# Build/extend it with ``build_cache``; reassign these to query a local build instead.
-PROD_S3_PREFIX = "s3://aind-scratch-data/aind-dynamic-foraging-cache"
-SESSION_DB = f"{PROD_S3_PREFIX}/session_table.parquet"  # flat session table
-TRIAL_DB = f"{PROD_S3_PREFIX}/trial_table"  # Hive-partitioned by subject_id
-EVENT_DB = f"{PROD_S3_PREFIX}/event_table"  # Hive-partitioned by subject_id
+# Read API (DuckDB query helpers) + the canonical production DB paths on S3 (public
+# bucket — no credentials to read). Build/extend the DB with ``build_cache``; pass
+# ``base=`` to the helpers (or reassign these) to query a local build instead.
+from aind_dynamic_foraging_data_utils.foraging_cache.query import (  # noqa: F401
+    EVENT_DB,
+    PROD_S3_PREFIX,
+    SESSION_DB,
+    TRIAL_DB,
+    fetch_events,
+    fetch_trials,
+    read_events,
+    read_trials,
+    select_sessions,
+)

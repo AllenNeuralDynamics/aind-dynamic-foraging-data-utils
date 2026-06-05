@@ -16,9 +16,11 @@ description: >
 AIND dynamic-foraging behavior originates as per-session **NWB files**; for analysis, query the
 **parquet cache** built from them (see [Parquet Database](#parquet-database-the-primary-way-to-access-behavior)
 below) rather than opening NWBs. The repo is `aind-dynamic-foraging-data-utils`; the cache lives in
-its `foraging_cache/` sub-package. There is no `cache_utils.py` wrapper — query with DuckDB.
-**Authoritative docs:** `foraging_cache/README.md` (querying — self-contained, paste into an LLM
-as context) and `README_build.md` (building).
+its `foraging_cache/` sub-package. Query it with the helpers in `foraging_cache.query`
+(`select_sessions` → `fetch_trials`/`fetch_events`; DuckDB under the hood), and drop to native
+SQL via `read_trials`/`read_events` when you need more. **Authoritative docs:**
+`foraging_cache/README.md` (querying — self-contained, paste into an LLM as context) and
+`README_build.md` (building).
 
 ## Data Sources
 
@@ -62,16 +64,31 @@ AWS credentials needed to read). **Authoritative, self-contained querying doc:**
 `foraging_cache/README.md` — paste it into an LLM as context to generate queries; full schema +
 query patterns in `references/parquet-api.md`.
 
-**S3 location**: `s3://aind-scratch-data/aind-dynamic-foraging-cache/` (importable as
-`SESSION_DB` / `TRIAL_DB` / `EVENT_DB` from `aind_dynamic_foraging_data_utils.foraging_cache`).
+**S3 location**: `s3://aind-scratch-data/aind-dynamic-foraging-cache/` (paths `SESSION_DB` /
+`TRIAL_DB` / `EVENT_DB` and the query helpers below are importable from
+`aind_dynamic_foraging_data_utils.foraging_cache`).
 - `session_table.parquet` — one row per session (~24k × 160 cols). Unions Han metadata with the
   Code Ocean universe; the ~381 CO-only sessions absent from Han have all Han columns NULL.
 - `trial_table/subject_id=<id>/<subject_id>.parquet` — Hive-partitioned, 1 file/subject (~12.5M × 103 cols)
 - `event_table/subject_id=<id>/<subject_id>.parquet` — Hive-partitioned, 1 file/subject
 
-**Querying (DuckDB; no wrapper function):**
+**Querying — use the helpers first (`foraging_cache.query`):**
+```python
+from aind_dynamic_foraging_data_utils.foraging_cache import select_sessions, fetch_trials, fetch_events
+sel    = select_sessions("task LIKE '%Uncoupled%' AND foraging_eff > 0.8")  # filter the session table
+trials = fetch_trials(sel, columns=["animal_response", "earned_reward"])     # their trials + metadata joined
+```
+- `select_sessions(where=..., subjects=..., columns=...)` → filtered session DataFrame (covers both
+  "metric filter → fetch" and "subject → session → fetch"); `fetch_trials`/`fetch_events(sel, ...)`
+  read **only the selected subjects' partitions** (~1 s) and join the session metadata on.
+- More than the helpers cover (aggregations, windows, trial↔event joins)? `read_trials(subjects)` /
+  `read_events(subjects)` return a fast partition-scoped `read_parquet(...)` clause to drop into any SQL.
+
+**Native SQL conventions (what the helpers do under the hood):**
 - session key is `_session_id` (session table) ↔ `session_id` (trial/event)
 - always `hive_partitioning=true, union_by_name=true` + `CAST(subject_id AS VARCHAR)` (partition col is inferred BIGINT)
+- scope the read to the subjects you need (a `subject_id=<id>/*.parquet` glob/list) — a full
+  `/**/*.parquet` glob reads every subject's footer to build the union (~25 s cold)
 - trial table is a **103-column union** across the three readers; key cols: `animal_response`
   (0=L/1=R/2=ignore), `earned_reward`, `reward_probabilityL/R`, `rewarded_historyL/R`,
   `auto_waterL/R`, `goCue_start_time_in_session`

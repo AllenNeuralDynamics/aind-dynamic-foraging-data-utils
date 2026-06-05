@@ -48,21 +48,76 @@ from aind_dynamic_foraging_data_utils.foraging_cache import SESSION_DB, TRIAL_DB
 
 ---
 
-## Quick start
+## Quick start — the query helpers
+
+Reach for the helpers first. They do the fiddly, easy-to-get-wrong part (reading the right
+partition files, fast *and* correct) and hand back a pandas DataFrame. Drop to
+[native SQL](#native-sql-what-the-helpers-are-built-on) only when you need more.
+
+```python
+from aind_dynamic_foraging_data_utils.foraging_cache import (
+    select_sessions, fetch_trials, fetch_events,
+)
+
+# 1) Filter the (small) session table on any metric / metadata.
+sel = select_sessions("task LIKE '%Uncoupled%' AND finished_trials > 500 AND finished_rate > 0.9")
+
+# 2) Pull those sessions' trials — session metadata is joined onto every row.
+trials = fetch_trials(sel, columns=["animal_response", "earned_reward",
+                                    "reward_probabilityL", "reward_probabilityR"])
+
+# ... or their events (optionally restricted to certain event types).
+licks = fetch_events(sel, events=["left_lick_time", "right_lick_time"])
+```
+
+**Two workflows, same two calls** — the only difference is how you filter the session table:
+
+- **Filter on session metrics/metadata, then fetch** — pass a `where=` predicate (any column
+  of the session table; see [filter columns](#common-filter-columns-session-table)).
+- **Subject first, then session, then fetch** — pass `subjects=[...]` (optionally with `where=`):
+
+```python
+sel = select_sessions("finished_trials > 200", subjects=["754372", "758435"])
+trials = fetch_trials(sel, columns=["animal_response", "earned_reward"])
+```
+
+`fetch_trials` / `fetch_events` read **only the selected subjects' partition files** (≈1 s, not
+every subject's) and inner-join to your selection, so you get exactly those sessions' rows with
+their metadata attached — one row per trial/event, leading `subject_id, session_date,
+session_id`. Add `columns=` to project specific columns (default is a small choice/reward set;
+`columns="*"` returns all — large).
+
+### Need more than the helpers cover? Drop to SQL on a fast source
+
+The helpers don't try to express *every* query (aggregations, window functions, trial↔event
+joins). For those, `read_trials(subjects)` / `read_events(subjects)` return a **fast,
+partition-scoped `read_parquet(...)` clause** you drop into any SQL — so you keep the full
+power of SQL without the slow full-table glob:
 
 ```python
 import duckdb
-from aind_dynamic_foraging_data_utils.foraging_cache import SESSION_DB, TRIAL_DB, EVENT_DB
+from aind_dynamic_foraging_data_utils.foraging_cache import read_trials
 
-# How many sessions for one mouse?
+src = read_trials(["754372", "758435"])           # scoped -> reads only these subjects' files
 duckdb.sql(f"""
-    SELECT COUNT(*) AS n_sessions
-    FROM read_parquet('{SESSION_DB}')
-    WHERE subject_id = '754372'
+    SELECT subject_id, COUNT(*) AS n_trials, AVG(earned_reward::DOUBLE) AS reward_rate
+    FROM {src} GROUP BY subject_id ORDER BY subject_id
 """).df()
 ```
 
+`read_trials()` / `read_events()` with no arguments return the full-table glob (correct for any
+query, but reads every subject's footer — slow; scope to subjects whenever you can).
+
+> All helpers query the public S3 cache by default. Pass `base=` (a local dir or another S3
+> prefix) to any of them to query a different build.
+
 ---
+
+## Native SQL (what the helpers are built on)
+
+Everything below is the raw DuckDB layer. Use it directly when you want full control — or to
+understand what the helpers do under the hood. (You can still read the session table directly,
+e.g. `duckdb.sql(f"SELECT COUNT(*) FROM read_parquet('{SESSION_DB}') WHERE subject_id = '754372'")`.)
 
 ## The three read options (always use these on the partitioned tables)
 
@@ -370,6 +425,18 @@ want — no need to paste this README.
 ---
 
 ## Read performance (full prod cache — ~23.6k sessions, 12.5M trials, over S3)
+
+**Scope the read to the subjects you need** — this is what the helpers do, and it dominates
+selective-query latency:
+
+- **Selective query via the helpers / a scoped read** (a handful of subjects, choice/reward
+  columns) → **~1 s**. `fetch_trials(sel, …)` / `read_trials(subjects)` read only those
+  subjects' partition files.
+- **Full-table glob** (`/**/*.parquet` + `union_by_name`) → **~25 s cold** *before* any data:
+  it reads every subject file's footer to build the column union, even for one subject. Reuse a
+  single DuckDB connection and repeats drop to ~7 s; scoping avoids it entirely.
+
+Whole-dataset reads (where you genuinely touch every subject, so the footer scan isn't extra):
 
 - **5-column projection** (choice/reward/prob, + keys) → **~6 s, ~2 GB** — the normal analysis pattern.
 - full 103-column trial table → **~53 s, ~21 GB**.
