@@ -178,6 +178,7 @@ joining to trials/events. The columns you'll filter on most:
 | **Institute / hardware / rig** | `institute`, `hardware`, `rig_type`, `room` | `institute`: `AIND` \| `Janelia`; `hardware`: `bonsai` \| `bpod`; `rig_type`: `training` \| `ephys`; `room`: `447`, `446`, … → e.g. `institute = 'Janelia'`, `hardware = 'bpod'`, `rig_type = 'ephys'` |
 | **Behavior task** | `task` | `Uncoupled Baiting`, `Coupled Baiting`, `Uncoupled Without Baiting`, `Coupled Without Baiting` → `task LIKE '%Uncoupled%'` |
 | **Curriculum** | `curriculum_name`, `curriculum_version` | e.g. `Uncoupled Baiting` / `'2.3'`; **`'None'` = off-curriculum** → `curriculum_name <> 'None'` for on-curriculum only |
+| **Curriculum stage** | `current_stage_actual` | `STAGE_1_WARMUP` → `STAGE_1` → `STAGE_2/3/4` → `STAGE_FINAL` → `GRADUATED` (`'None'` = off-curriculum). For fully-trained sessions use the **"Final stages"**: `current_stage_actual IN ('STAGE_FINAL', 'GRADUATED')` (see note below) |
 | **Performance metrics** | `finished_trials`, `finished_rate`, `foraging_eff`, `total_trials`, `reward_trials`, `bias_naive`, … | combine freely: `foraging_eff > 0.8 AND finished_trials > 200 AND finished_rate > 0.7` |
 
 > 💡 **Use `institute` / `hardware` / `rig_type` for high-level grouping** (clean values:
@@ -190,6 +191,12 @@ joining to trials/events. The columns you'll filter on most:
 > = 'None'` (and `curriculum_version = 'None'`); the ~381 CO-only sessions absent from Han have
 > SQL `NULL`. `curriculum_name NOT IN ('None')` keeps on-curriculum sessions (it also drops the
 > NULLs).
+>
+> **"Final stages" — `STAGE_FINAL` vs `GRADUATED`:** a curriculum's terminal *training
+> parameters* are reached at `current_stage_actual = 'STAGE_FINAL'`; once a mouse meets the
+> graduation criteria the stage is relabeled `'GRADUATED'` — but **both run the identical task
+> parameters**. So for "fully-trained" sessions, treat them as one:
+> `current_stage_actual IN ('STAGE_FINAL', 'GRADUATED')`.
 
 ---
 
@@ -227,7 +234,7 @@ duckdb.sql(f"DESCRIBE SELECT * FROM {READ_EVENTS}").df()                        
 | `room` | VARCHAR | rig room (`447`, `446`, `347`, …) |
 | `data_source` | VARCHAR | fine-grained composite ≈ `{institute}_{rig_type}_{room}_{hardware}` (e.g. `AIND_training_447_bonsai`) — **≠ `nwb_data_source`** |
 | `curriculum_name`, `curriculum_version` | VARCHAR | curriculum + version; **`'None'` = off-curriculum**, `NULL` = not in Han |
-| `current_stage_actual` | VARCHAR | curriculum stage reached |
+| `current_stage_actual` | VARCHAR | curriculum stage reached: `STAGE_1_WARMUP`…`STAGE_FINAL`/`GRADUATED` — the two **"Final stages"** (`STAGE_FINAL`, `GRADUATED`) share training parameters; `'None'` = off-curriculum |
 | `rig`, `trainer`, `PI` | VARCHAR | session metadata |
 | `weight_after`, `water_in_session_total` | DOUBLE | weight / water |
 | `logistic_*`, `abs(*_bias)` | DOUBLE | fitted logistic-regression model coefficients |

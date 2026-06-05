@@ -93,8 +93,11 @@ trials = fetch_trials(sel, columns=["animal_response", "earned_reward"])     # t
   (0=L/1=R/2=ignore), `earned_reward`, `reward_probabilityL/R`, `rewarded_historyL/R`,
   `auto_waterL/R`, `goCue_start_time_in_session`
 - session filters: `institute`/`hardware`/`rig_type`, `task`, `curriculum_name` (`'None'` =
-  off-curriculum), metrics (`foraging_eff`, `finished_trials`, …). NB `data_source` (Han
-  rig/institute composite) ≠ `nwb_data_source` (`co_asset`/`bonsai_s3`/`bpod_s3`).
+  off-curriculum), `current_stage_actual` (curriculum stage `STAGE_1_WARMUP`…`STAGE_FINAL`/`GRADUATED`;
+  **"Final stages" = `STAGE_FINAL` OR `GRADUATED`** — same training params, so use
+  `current_stage_actual IN ('STAGE_FINAL','GRADUATED')` for fully-trained sessions), metrics
+  (`foraging_eff`, `finished_trials`, …). NB `data_source` (Han rig/institute composite) ≠
+  `nwb_data_source` (`co_asset`/`bonsai_s3`/`bpod_s3`).
 
 (To build/update the cache, see `build_cache.py` / `README_build.md` — not needed for analysis.)
 
