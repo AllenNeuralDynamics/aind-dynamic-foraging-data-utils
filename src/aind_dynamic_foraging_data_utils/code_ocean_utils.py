@@ -15,12 +15,98 @@ import warnings
 import numpy as np
 import pandas as pd
 import s3fs
-from aind_analysis_arch_result_access.han_pipeline import get_mle_model_fitting
+from aind_analysis_arch_result_access.han_pipeline import get_mle_model_fitting, get_session_table
 from aind_data_access_api.document_db import MetadataDbClient
 from codeocean import CodeOcean
 from codeocean.data_asset import DataAssetAttachParams
 
 from aind_dynamic_foraging_data_utils import nwb_utils
+
+
+def find_aind_session_not_on_docdb(processed=False):
+    """
+    Compare with
+    """
+    print("Loading Han's table")
+    han_df = get_session_table()
+    print("done 1/2 - loading docdb results")
+    client = MetadataDbClient(
+        host="api.allenneuraldynamics.org", database="metadata_index", collection="data_assets"
+    )
+
+    task_filter = {
+        "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"},
+    }
+    data_level_filter = {"data_description.data_level": "derived" if processed else "raw"}
+
+    projection = {
+        "name": 1,
+        "_id": 1,
+        "session": 1,
+        "session_name": 1,
+        "external_links": 1,
+        "subject.subject_id": 1,
+        "rig.rig_id":1
+    }
+
+    doc_df = pd.DataFrame(
+        client.retrieve_docdb_records(
+            filter_query={
+                **task_filter,
+                **data_level_filter,
+            },
+            projection=projection,
+        )
+    )
+    print("done!")
+    return doc_df, han_df
+
+
+def add_session_columns(doc_df, han_df):
+    #han_df["session_start_time"] = [x.replace(" ", "T") for x in han_df["session_start_time"]]
+    han_df["date"] = han_df["session_date"].dt.strftime("%Y-%m-%d")
+    han_df["clean_name"] = [
+        str(x[0]) + "_" + str(x[1]) + "_{}-{}-{}".format(x[2][0:2], x[2][2:4], x[2][4:])
+        for x in zip(han_df["subject_id"], han_df["date"], han_df["nwb_suffix"].astype(str))
+    ]
+    han_df["id_date"] = [x[0] + "_" + x[1] for x in zip(han_df["subject_id"], han_df["date"])]
+
+
+    # asset name is not the same as session start time in metadata
+    doc_df["subject_id"] = [x["subject_id"] for x in doc_df["subject"]]
+    doc_df["clean_name"] = ["_".join(x.split("_")[1:]) for x in doc_df['name']]
+    doc_df["id_date"] = ["_".join(x.split("_")[1:3]) for x in doc_df["name"]]
+
+    return doc_df, han_df
+
+
+def figure_out_diff(doc_df, han_df, compare="id_date"):
+    in_both = sorted(list(set(doc_df[compare].values).intersection(set(han_df[compare].values))))
+    in_docdb_not_han = sorted(list(set(doc_df[compare].values) - set(han_df[compare].values)))
+    in_han_not_docdb = sorted(list(set(han_df[compare].values) - set(doc_df[compare].values)))
+    print("in both: {}".format(len(in_both)))
+    print("in docdb not han: {}".format(len(in_docdb_not_han)))
+    print("in han not docdb: {}".format(len(in_han_not_docdb)))
+    set_both = set(in_both)
+    set_not_han = set(in_docdb_not_han)
+    set_not_docdb = set(in_han_not_docdb)
+    doc_df["not_in_han"] = [x in set_not_han for x in doc_df[compare]]
+    han_df["not_in_docdb"] = [x in set_not_docdb for x in han_df[compare]]
+
+    # In docdb but not han?
+    #   rig not running Han's pipeline (148 ephys sessions...)
+    #   manually uploaded hopkins data (some from before watchdog)
+    # in han but not docdb?
+    #   older than watchdog
+    #   session where manifest wasn't written
+    #   session that didn't upload because someone deleted the manifest (probably testing or problem session)
+
+def investigate_missing_in_han(doc_df, han_df):
+    missing_in_han = doc_df.query('not_in_han').sort_values(by='id_date').copy()
+    missing_in_han['rig_id'] = ['_'.join(x['rig_id'].split('_')[0:2]) if isinstance(x, dict) else '?' for x in missing_in_han['rig']]
+    missing_in_han['rig_id'] = [x.split('_RF_')[0] for x in missing_in_han['rig_id']]
+    missing_in_han['rig_id'] = ['?' if x == '' else x for x in missing_in_han['rig_id']]
+    missing_by_rig = missing_in_han.groupby('rig_id')['name'].count().to_frame()
 
 
 def get_subject_assets(subject_id, **kwargs):
