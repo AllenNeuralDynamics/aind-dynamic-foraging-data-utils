@@ -507,11 +507,10 @@ def create_df_trials(
                 "Rewarded trials without reward time. \
                 This is likely due to manual rewards not being recorded in sessions from 2024"
             )
+        elif ignore_errors:
+            warnings.warn("Rewarded trials without reward time")
         else:
-            if ignore_errors:
-                warnings.warn("Rewarded trials without reward time")
-            else:
-                raise AssertionError("Rewarded trials without reward time")
+            raise AssertionError("Rewarded trials without reward time")
 
     assert (
         np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0
@@ -524,11 +523,10 @@ def create_df_trials(
                 "Reward before choice time. \
                 This is likely due to manual rewards not being recorded in sessions from 2024"
             )
+        elif ignore_errors:
+            warnings.warn("Reward before choice time")
         else:
-            if ignore_errors:
-                warnings.warn("Reward before choice time")
-            else:
-                raise AssertionError("Reward before choice time")
+            raise AssertionError("Reward before choice time")
 
     assert np.all(
         rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE
@@ -544,11 +542,10 @@ def create_df_trials(
                         this is likely because extra_rewards are not recorded",
                 UserWarning,
             )
+        elif ignore_errors:
+            warnings.warn("Unrewarded trials with reward time")
         else:
-            if ignore_errors:
-                warnings.warn("Unrewarded trials with reward time")
-            else:
-                raise AssertionError("Unrewarded trials with reward time")
+            raise AssertionError("Unrewarded trials with reward time")
 
     # Drop columns
     drop_cols += key_from_acq
