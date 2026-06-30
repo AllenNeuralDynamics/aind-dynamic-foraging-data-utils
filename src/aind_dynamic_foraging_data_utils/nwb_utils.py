@@ -356,8 +356,8 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     skip_cols = ["right_valve_open_time", "left_valve_open_time"]
 
     # Manual fix for delay_start_time
-    if 'delay_start_time' in df:
-        df['delay_start_time'] = pd.to_numeric(df['delay_start_time'], errors='coerce')
+    if "delay_start_time" in df:
+        df["delay_start_time"] = pd.to_numeric(df["delay_start_time"], errors="coerce")
 
     # compute times relative to start of trial and start of session
     t0 = nwb.trials[SESSION_ALIGNMENT][0]
