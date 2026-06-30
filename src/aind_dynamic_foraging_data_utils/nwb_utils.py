@@ -335,7 +335,11 @@ def create_df_trials(  # NOQA C901
     nwb = load_nwb_from_filename(nwb_filename)
 
     # Parse subject and session_date
-    if nwb.session_id.startswith("behavior") or nwb.session_id.startswith("FIP"):
+    if (
+        nwb.session_id.startswith("behavior")
+        or nwb.session_id.startswith("FIP")
+        or nwb.session_id.startswith("ecephys")
+    ):
         splits = nwb.session_id.split("_")
         subject_id = splits[1]
         session_date = splits[2]
