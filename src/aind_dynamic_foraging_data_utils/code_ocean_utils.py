@@ -187,7 +187,9 @@ def get_assets(  # NOQA: C901
     return results_no_duplicates.reset_index(drop=True)
 
 
-def get_dynamic_foraging_assets(pagination=True, paginate_batch_size=5000, projection=None):
+def get_dynamic_foraging_assets(
+    pagination=True, paginate_batch_size=5000, projection=None, extra_filter=None
+):
     """
     Return ALL processed dynamic-foraging sessions known to docDB — the complete
     Code Ocean universe.
@@ -202,6 +204,11 @@ def get_dynamic_foraging_assets(pagination=True, paginate_batch_size=5000, proje
     following foraging-behavior-browser/code/util/fetch_data_docDB.py, so the large
     (~19k-record) result set is retrieved reliably rather than in one huge response.
 
+    extra_filter (dict, optional): additional docDB query clauses merged into the
+        filter_query (server-side), e.g. for an incremental "only recent sessions"
+        fetch: ``{"session.session_start_time": {"$gte": "2026-05-01"}}``. Empty/None
+        means no extra constraint (the full universe).
+
     Returns a DataFrame (deduplicated to the latest processed asset per session)
     with columns: name, session_name, location, code_ocean_asset_id, subject_id.
     """
@@ -215,6 +222,8 @@ def get_dynamic_foraging_assets(pagination=True, paginate_batch_size=5000, proje
         ],
         "data_description.data_level": "derived",
     }
+    if extra_filter:
+        filter_query.update(extra_filter)
     if projection is None:
         projection = {
             "_id": 0,
