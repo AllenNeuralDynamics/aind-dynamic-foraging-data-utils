@@ -310,13 +310,17 @@ def create_single_df_session(nwb_filename):
     return df_session
 
 
-def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
+def create_df_trials(  # NOQA C901
+    nwb_filename, adjust_time=True, verbose=True, ignore_errors=False
+):
     """
     Process nwb and create df_trials for every single session
 
     ARGS:
     nwb_filename (str or NWB object), the session to extract the trials from
     adjust_time (bool) if true, adjust t0 to be the first gocue
+    ignore_errors(bool) if true, ignore AssertionErrors about data quality.
+        Otherwise raise a warning about data quality
 
     RETURNS:
     A pandas dataframe containing the columns of nwb.trials plus:
@@ -331,7 +335,11 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     nwb = load_nwb_from_filename(nwb_filename)
 
     # Parse subject and session_date
-    if nwb.session_id.startswith("behavior") or nwb.session_id.startswith("FIP"):
+    if (
+        nwb.session_id.startswith("behavior")
+        or nwb.session_id.startswith("FIP")
+        or nwb.session_id.startswith("ecephys")
+    ):
         splits = nwb.session_id.split("_")
         subject_id = splits[1]
         session_date = splits[2]
@@ -354,6 +362,10 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     # We skip these columns because they are how long the valve is open
     # not the times at which the valves were opened
     skip_cols = ["right_valve_open_time", "left_valve_open_time"]
+
+    # Manual fix for delay_start_time
+    if "delay_start_time" in df:
+        df["delay_start_time"] = pd.to_numeric(df["delay_start_time"], errors="coerce")
 
     # compute times relative to start of trial and start of session
     t0 = nwb.trials[SESSION_ALIGNMENT][0]
@@ -499,6 +511,8 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                 "Rewarded trials without reward time. \
                 This is likely due to manual rewards not being recorded in sessions from 2024"
             )
+        elif ignore_errors:
+            warnings.warn("Rewarded trials without reward time")
         else:
             raise AssertionError("Rewarded trials without reward time")
 
@@ -513,6 +527,8 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                 "Reward before choice time. \
                 This is likely due to manual rewards not being recorded in sessions from 2024"
             )
+        elif ignore_errors:
+            warnings.warn("Reward before choice time")
         else:
             raise AssertionError("Reward before choice time")
 
@@ -530,6 +546,8 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                         this is likely because extra_rewards are not recorded",
                 UserWarning,
             )
+        elif ignore_errors:
+            warnings.warn("Unrewarded trials with reward time")
         else:
             raise AssertionError("Unrewarded trials with reward time")
 
