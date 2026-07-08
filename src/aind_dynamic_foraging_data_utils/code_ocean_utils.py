@@ -118,19 +118,16 @@ def get_assets(  # NOQA: C901
     else:
         stage_filter = {}
 
-    # Do we want processed or raw assets
-    if processed:
-        processed_string = "_.*processed_[0-9-_]*"
-    else:
-        processed_string = (
-            "_[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
-        )
+    # Do we want processed (derived) or raw assets. Filter on the canonical
+    # data_description.data_level metadata field rather than a name regex.
+    data_level_filter = {"data_description.data_level": "derived" if processed else "raw"}
 
-    # Query based on subject id
+    # Query based on subject id (name regex now only constrains the subject;
+    # the processed/raw distinction is handled by data_level_filter above).
     if len(subjects) == 0:
         print("Query will be slow without explicit subject ids")
         subject_filter = {
-            "name": {"$regex": "^behavior_[0-9]*{}$".format(processed_string)},
+            "name": {"$regex": "^behavior_[0-9]"},
         }
         # Return only essential information for performance
         projection = {
@@ -144,11 +141,7 @@ def get_assets(  # NOQA: C901
         }
     else:
         subject_filter = {
-            "name": {
-                "$regex": "^behavior_("
-                + "|".join([str(x) for x in subjects])
-                + "){}$".format(processed_string)
-            },
+            "name": {"$regex": "^behavior_(" + "|".join([str(x) for x in subjects]) + ")_"},
         }
         # Return all information
         projection = None
@@ -161,6 +154,7 @@ def get_assets(  # NOQA: C901
                 **task_filter,
                 **modality_filter,
                 **stage_filter,
+                **data_level_filter,
                 **extra_filter,
             },
             projection=projection,
@@ -191,6 +185,128 @@ def get_assets(  # NOQA: C901
     ]
 
     return results_no_duplicates.reset_index(drop=True)
+
+
+def get_dynamic_foraging_assets(
+    pagination=True, paginate_batch_size=5000, projection=None, extra_filter=None
+):
+    """
+    Return ALL processed dynamic-foraging sessions known to docDB — the complete
+    Code Ocean universe.
+
+    Unlike get_assets() (which filters by session.session_type regex and a subject
+    list), this filters on the task *software name* ("dynamic-foraging-task"), which
+    is the reliable signal for "is this a dynamic-foraging session". It catches
+    sessions that exist on Code Ocean but are missing from Han's pipeline session
+    table (~1k recent sessions as of 2026-06).
+
+    Uses server-side pagination (paginate / paginate_batch_size, default 5000),
+    following foraging-behavior-browser/code/util/fetch_data_docDB.py, so the large
+    (~19k-record) result set is retrieved reliably rather than in one huge response.
+
+    extra_filter (dict, optional): additional docDB query clauses merged into the
+        filter_query (server-side), e.g. for an incremental "only recent sessions"
+        fetch: ``{"session.session_start_time": {"$gte": "2026-05-01"}}``. Empty/None
+        means no extra constraint (the full universe).
+
+    Returns a DataFrame (deduplicated to the latest processed asset per session)
+    with columns: name, session_name, location, code_ocean_asset_id, subject_id.
+    """
+    client = MetadataDbClient(
+        host="api.allenneuraldynamics.org", database="metadata_index", collection="data_assets"
+    )
+    filter_query = {
+        "$or": [
+            {"session.data_streams.software.name": "dynamic-foraging-task"},
+            {"session.stimulus_epochs.software.name": "dynamic-foraging-task"},
+        ],
+        "data_description.data_level": "derived",
+    }
+    if extra_filter:
+        filter_query.update(extra_filter)
+    if projection is None:
+        projection = {
+            "_id": 0,
+            "name": 1,
+            "location": 1,
+            "external_links": 1,
+            "subject.subject_id": 1,
+            # Descriptive session metadata, used to fill CO-only sessions that are
+            # absent from Han: task / curriculum / stage come from the task-GUI
+            # parameters; rig_id + modality let us derive room / rig_type.
+            "session.session_type": 1,
+            "session.rig_id": 1,
+            "session.stimulus_epochs.output_parameters.task_parameters": 1,
+            "data_description.modality": 1,
+        }
+
+    records = client.retrieve_docdb_records(
+        filter_query=filter_query,
+        projection=projection,
+        paginate=pagination,
+        paginate_batch_size=paginate_batch_size,
+    )
+    if not records:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(records)
+
+    # A derived dynamic-foraging session can have several derived assets (the
+    # behavior-processed NWB, plus PoseTracking, sorted-opto-bandpass, ...). Only
+    # the behavior-processed asset (named "<session_name>_processed_<...>") carries
+    # the trials/events NWB, so keep only those. str.extract also yields the clean
+    # session_name ("behavior_<subj>_<date>_<time>"); other-pipeline assets -> NaN.
+    session_re = r"^(behavior_\d+_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})_processed"
+    df["session_name"] = df["name"].str.extract(session_re)
+    df = df[df["session_name"].notna()].copy()
+
+    # Dedup to the latest processed asset per session (mirror get_assets()).
+    df = df.sort_values("name").drop_duplicates(subset="session_name", keep="last").copy()
+
+    # Code Ocean asset id from external_links: {"Code Ocean": ["<asset-id>"]}.
+    df["code_ocean_asset_id"] = [
+        link["Code Ocean"][0] if isinstance(link, dict) and link.get("Code Ocean") else ""
+        for link in df["external_links"]
+    ]
+    # Flatten the nested subject.subject_id projection.
+    if "subject" in df.columns:
+        df["subject_id"] = [
+            s.get("subject_id") if isinstance(s, dict) else None for s in df["subject"]
+        ]
+
+    # Flatten descriptive session metadata (task / curriculum / stage from the task-GUI
+    # parameters in the first stimulus epoch, plus rig_id and modality).
+    def _task_params(sess):
+        """task_parameters dict from the first stimulus epoch's output_parameters."""
+        epochs = (sess or {}).get("stimulus_epochs") or []
+        if epochs:
+            return (epochs[0].get("output_parameters") or {}).get("task_parameters") or {}
+        return {}
+
+    def _get(obj, key):
+        """Safe .get on a possibly-non-dict cell."""
+        return obj.get(key) if isinstance(obj, dict) else None
+
+    sessions = df["session"] if "session" in df.columns else [None] * len(df)
+    descrs = df["data_description"] if "data_description" in df.columns else [None] * len(df)
+    tps = [_task_params(s) for s in sessions]
+    df["co_task"] = [tp.get("Task") for tp in tps]
+    df["curriculum_in_use"] = [tp.get("curriculum_in_use") for tp in tps]
+    df["stage_in_use"] = [tp.get("stage_in_use") for tp in tps]
+    df["co_session_type"] = [_get(s, "session_type") for s in sessions]
+    df["co_rig_id"] = [_get(s, "rig_id") for s in sessions]
+    df["co_modality"] = [
+        ",".join(
+            m.get("abbreviation", "")
+            for m in (_get(d, "modality") or [])
+            if isinstance(m, dict)
+        )
+        for d in descrs
+    ]
+    df = df.drop(columns=[c for c in ["session", "data_description", "external_links", "subject"]
+                          if c in df.columns])
+
+    return df.reset_index(drop=True)
 
 
 def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
