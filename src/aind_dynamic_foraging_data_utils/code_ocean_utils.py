@@ -22,14 +22,18 @@ from codeocean.data_asset import DataAssetAttachParams
 
 from aind_dynamic_foraging_data_utils import nwb_utils
 
+'''
+han_df = co.load_han_dataset()
+doc_df = co.load_aind_dataset()
 
-def find_aind_session_not_on_docdb(processed=False):
+'''
+def load_han_dataset():
+    return get_session_table()
+
+def load_aind_dataset(processed=False):
     """
     Compare with
     """
-    print("Loading Han's table")
-    han_df = get_session_table()
-    print("done 1/2 - loading docdb results")
     client = MetadataDbClient(
         host="api.allenneuraldynamics.org", database="metadata_index", collection="data_assets"
     )
@@ -58,24 +62,23 @@ def find_aind_session_not_on_docdb(processed=False):
             projection=projection,
         )
     )
-    print("done!")
-    return doc_df, han_df
+    return doc_df
 
 
 def add_session_columns(doc_df, han_df):
-    #han_df["session_start_time"] = [x.replace(" ", "T") for x in han_df["session_start_time"]]
     han_df["date"] = han_df["session_date"].dt.strftime("%Y-%m-%d")
-    han_df["clean_name"] = [
-        str(x[0]) + "_" + str(x[1]) + "_{}-{}-{}".format(x[2][0:2], x[2][2:4], x[2][4:])
-        for x in zip(han_df["subject_id"], han_df["date"], han_df["nwb_suffix"].astype(str))
-    ]
     han_df["id_date"] = [x[0] + "_" + x[1] for x in zip(han_df["subject_id"], han_df["date"])]
+    han_df['nwb_suffix_str'] = [x.zfill(6) for x in han_df['nwb_suffix'].astype(str)]
+    han_df["id_date_time"] = [
+        str(x[0]) + "_" + str(x[1]) + "_{}-{}-{}".format(x[2][0:2], x[2][2:4], x[2][4:])
+        for x in zip(han_df["subject_id"], han_df["date"], han_df["nwb_suffix_str"])
+    ]
+    han_df["session_start_time"] = [x.replace(" ", "T") for x in han_df["session_start_time"]]
 
-
-    # asset name is not the same as session start time in metadata
     doc_df["subject_id"] = [x["subject_id"] for x in doc_df["subject"]]
-    doc_df["clean_name"] = ["_".join(x.split("_")[1:]) for x in doc_df['name']]
     doc_df["id_date"] = ["_".join(x.split("_")[1:3]) for x in doc_df["name"]]
+    doc_df["id_date_time"] = ["_".join(x.split("_")[1:]) for x in doc_df['name']]
+    doc_df['session_start_time'] = [x["session_start_time"] for x in doc_df["session"]]
 
     return doc_df, han_df
 
@@ -93,6 +96,21 @@ def figure_out_diff(doc_df, han_df, compare="id_date"):
     doc_df["not_in_han"] = [x in set_not_han for x in doc_df[compare]]
     han_df["not_in_docdb"] = [x in set_not_docdb for x in han_df[compare]]
 
+    '''
+    1) have to exclude ephys rigs
+    2) have to deal with nwb_suffix formatting
+    3) 614177 is a test subject used by micah and patrick
+
+    han_df = han_df[han_df['rig_type'] == "training"].copy()
+    han_df['2026'] = ['2026-' in x for x in han_df['id_date']]
+    doc_df['2026'] = ['2026-' in x for x in doc_df['id_date']]
+    han_df_2026 = han_df[han_df['2026']].copy()
+    doc_df_2026 = doc_df[doc_df['2026']].copy()
+
+    The session_start_time is not an exact match! it can differ by milliseconds? How are we saving these values??
+    doc_df is metadata session_start_time
+    han_df is "Other_SessionStartTime"
+    '''
     # In docdb but not han?
     #   rig not running Han's pipeline (148 ephys sessions...)
     #   manually uploaded hopkins data (some from before watchdog)
