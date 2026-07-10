@@ -25,6 +25,7 @@ from aind_dynamic_foraging_data_utils import nwb_utils
 '''
 han_df = co.load_han_dataset()
 doc_df = co.load_aind_dataset()
+doc_df, han_df = co.
 
 '''
 def load_han_dataset():
@@ -39,7 +40,7 @@ def load_aind_dataset(processed=False):
     )
 
     task_filter = {
-        "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"},
+        "session.session_type": {"$regex": "^(Uncoupled|Coupled|Random Walk)( Without)?( Baiting)?"},
     }
     data_level_filter = {"data_description.data_level": "derived" if processed else "raw"}
 
@@ -87,9 +88,9 @@ def figure_out_diff(doc_df, han_df, compare="id_date"):
     in_both = sorted(list(set(doc_df[compare].values).intersection(set(han_df[compare].values))))
     in_docdb_not_han = sorted(list(set(doc_df[compare].values) - set(han_df[compare].values)))
     in_han_not_docdb = sorted(list(set(han_df[compare].values) - set(doc_df[compare].values)))
-    print("in both: {}".format(len(in_both)))
-    print("in docdb not han: {}".format(len(in_docdb_not_han)))
-    print("in han not docdb: {}".format(len(in_han_not_docdb)))
+    print("sessions in both: {}".format(len(in_both)))
+    print("sessions in docdb not han: {}".format(len(in_docdb_not_han)))
+    print("sessions in han not docdb: {}".format(len(in_han_not_docdb)))
     set_both = set(in_both)
     set_not_han = set(in_docdb_not_han)
     set_not_docdb = set(in_han_not_docdb)
