@@ -88,7 +88,7 @@ def load_pavlovian_dfs(nwb_or_path, preprocessing=DEFAULT_PREPROCESSING, adjust_
         ``CS_start_time`` trials column, else False).
 
     Returns
-    -------
+    ----------
     df_events : pandas.DataFrame
         Tidy events with ``timestamp`` (s), ``events``, ``trial``, ``canonical``.
     df_fip : pandas.DataFrame
