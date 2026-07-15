@@ -10,7 +10,7 @@ Public functions:
     load_pavlovian_dfs
     detect_paradigm
     classify_trials
-    compute_psth
+    compute_pav_cs_psth
     plot_session_overview
     plot_cs_psth_grid
     plot_lick_quant
@@ -156,7 +156,7 @@ def classify_trials(df_events, cs_list):
     return out
 
 
-def compute_psth(
+def compute_pav_cs_psth(
     df_fip,
     channel,
     roi,
@@ -342,7 +342,7 @@ def plot_cs_psth_grid(
                 (pos_t, cs_color, cs_color, pos_lab),
                 (neg_t, "k", "gray", neg_lab),
             ):
-                t, mean, sem, n = compute_psth(
+                t, mean, sem, n = compute_pav_cs_psth(
                     df_fip, c, roi, times, t_before, t_after, baseline, output_sampling_rate
                 )
                 if n > 0:
