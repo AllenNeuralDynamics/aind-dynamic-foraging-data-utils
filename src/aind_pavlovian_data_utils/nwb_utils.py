@@ -1,51 +1,127 @@
 """
 Utility functions for processing dynamic foraging data.
     load_nwb_from_filename
+    canonical_event_name
+    parse_session_name
+    can_align_to_cs
     create_single_df_session_inner
     create_df_session
     create_single_df_session
     create_df_trials
     create_df_events
     create_df_fip
+    create_df_fip_pavlovian
 """
 
 import os
 import re
 import warnings
+from datetime import date
+from typing import Optional
 
 import numpy as np
 import pandas as pd
-from hdmf_zarr import NWBZarrIO
-from pynwb import NWBHDF5IO
-from datetime import date
+from aind_nwb_utils.nwb_io import determine_io
 
 # If we adjust time_in_session, adjust it to this
 SESSION_ALIGNMENT = "CS_start_time"
 
-# ms to s conversion 
+# ms to s conversion
 MS_TO_S = 1000
+
+# Default dF/F variant read by the Pavlovian analysis
+DEFAULT_FIP_PREPROCESSING = "dff-bright_mc-iso-IRLS"
+
+# NWB fiber-photometry channel prefix -> display label
+FIP_CHANNEL_MAP = {"Iso": "Iso", "G": "Green", "R": "Red"}
+
+
+def canonical_event_name(event_name: str) -> Optional[str]:
+    """Normalize ONE event label into a canonical key.
+
+    Parameters
+    ----------
+    event_name : str
+        A single value taken from the ``events`` column of
+        ``pavlovian_events_table`` (i.e. one cell, not the whole column and
+        not the NWB file). Examples: ``"CS1"``, ``"cs_2"``, ``"reward"``,
+        ``"airpuff"``, ``"left lick"``.
+
+    Returns
+    -------
+    str or None
+        One of ``"CS1"``..``"CS4"`` / ``"Reward"`` / ``"Airpuff"`` /
+        ``"Lick"``, or ``None`` if the label is not recognized.
+
+    Examples
+    --------
+    >>> canonical_event_name("cs_2")
+    'CS2'
+    >>> canonical_event_name("water")
+    'Reward'
+    >>> # applied element-wise over the events column:
+    >>> df_events["canonical"] = df_events["events"].map(canonical_event_name)
+    """
+    s = str(event_name).strip().lower()
+    if "lick" in s:
+        return "Lick"
+    if "airpuff" in s or "air_puff" in s or "puff" in s:
+        return "Airpuff"
+    if "reward" in s or "water" in s:
+        return "Reward"
+    m = re.search(r"cs[_\s]*([1-4])", s)
+    if m:
+        return "CS" + m.group(1)
+    return None
+
+
+def parse_session_name(nwb_filename):
+    """Return ``(subject_id, session_date)`` from the NWB session name.
+
+    AIND NWB objects always carry a session name in ``nwb.session_id`` shaped
+    like ``behavior_<subject>_<date>_<time>`` (or ``<subject>_<date>_...`` for
+    the older json-style names), so subject and date are read straight from it.
+    """
+    nwb = load_nwb_from_filename(nwb_filename)
+    splits = nwb.session_id.split("_")
+    if nwb.session_id.startswith("behavior") or nwb.session_id.startswith("FIP"):
+        return splits[1], splits[2]
+    return splits[0], splits[1]
+
+
+def can_align_to_cs(nwb_filename):
+    """Return True if the session has a trials column to align time to.
+
+    ``create_df_events`` / ``create_df_fip`` subtract the first
+    ``SESSION_ALIGNMENT`` (``CS_start_time``) when ``adjust_time=True``; when the
+    column is missing, callers must fall back to absolute time.
+    """
+    nwb = load_nwb_from_filename(nwb_filename)
+    try:
+        return SESSION_ALIGNMENT in set(nwb.trials.colnames)
+    except Exception:
+        return False
 
 
 def load_nwb_from_filename(filename):
     """
     Load NWB from file, checking for HDF5 or Zarr
     if filename is not a string, then return the input, assuming its the NWB file already
+
+    IO detection (HDF5 vs Zarr, local or s3) is delegated to
+    ``aind_nwb_utils.nwb_io.determine_io`` so it stays consistent with how the
+    rest of the AIND stack (e.g. ``NWBCombineIO``) opens NWB files.
     """
 
-    if type(filename) is str:
-        if os.path.isdir(filename) or (filename.startswith("s3://") and filename.endswith(".nwb")):
-            io = NWBZarrIO(filename, mode="r")
-            nwb = io.read()
-            return nwb
-        elif os.path.isfile(filename):
-            io = NWBHDF5IO(filename, mode="r")
-            nwb = io.read()
-            return nwb
-        else:
-            raise FileNotFoundError(filename)
-    else:
+    if not isinstance(filename, str):
         # Assuming its already an NWB
         return filename
+
+    if not filename.startswith("s3://") and not os.path.exists(filename):
+        raise FileNotFoundError(filename)
+
+    io_class = determine_io(filename)
+    return io_class(filename, "r").read()
 
 
 def create_single_df_session_inner(nwb):
@@ -164,8 +240,6 @@ def create_single_df_session_inner(nwb):
         [["metadata"], dict_meta.keys()], names=["type", "variable"]
     )
 
-
-
     # -- Merge to df_session --
     df_session = pd.concat([df_session, df_session_stat], axis=1)
     return df_session
@@ -244,12 +318,11 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     last_stop = df.iloc[-1]["stop_time"]
     df["stop_time"] = df["start_time"].shift(-1, fill_value=last_stop)
 
-
     # compute times relative to start of trial and start of session
     t0 = nwb.trials[SESSION_ALIGNMENT][0]
     drop_cols = []
     for col in df.columns:
-        if ("time" in col):
+        if "time" in col:
             # Adjust all times relative to start of the first go cue
             if adjust_time:
                 df[col + "_in_session"] = (df[col] - t0) / MS_TO_S
@@ -257,7 +330,7 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                 df[col + "_in_session"] = df[col] / MS_TO_S
 
             # Adjust times relative to go cue on each trial
-            if ("time" in col):
+            if "time" in col:
                 # Here we always align to goCue_start_time, not SESSION_ALIGNMENT
                 # since this aligns events relative to the trial go cue, not the start
                 # of the session
@@ -269,10 +342,9 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     # Add a column of raw time so users can map if they want
     raw_timepoints = ["start_time", "stop_time", "CS_start_time"]
 
-    
-    df = df.rename(columns = {raw_timepoint : raw_timepoint + '_raw' for raw_timepoint in raw_timepoints})
-    
-
+    df = df.rename(
+        columns={raw_timepoint: raw_timepoint + "_raw" for raw_timepoint in raw_timepoints}
+    )
 
     return df
 
@@ -300,16 +372,21 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True):
     # }
 
     # Version 1 pav nwb has pavlovian evnets in pavlovian event table
-    if 'pavlovian_events' in nwb.processing:
-        df = nwb.processing['pavlovian_events']['pavlovian_events_table'].to_dataframe().reset_index()
+    if "pavlovian_events" in nwb.processing:
+        df = (
+            nwb.processing["pavlovian_events"]["pavlovian_events_table"]
+            .to_dataframe()
+            .reset_index()
+        )
 
-        df['timestamp_raw'] = df['timestamp']
-        df['timestamp'] = df['timestamp'] / MS_TO_S
+        df["timestamp_raw"] = df["timestamp"]
+        df["timestamp"] = df["timestamp"] / MS_TO_S
+        df["canonical"] = df["events"].map(canonical_event_name)
 
     # Determine time 0 as first go Cue
     if adjust_time:
         t0 = nwb.trials[SESSION_ALIGNMENT][0] / MS_TO_S
-        df['timestamp'] = df['timestamp'] - t0
+        df["timestamp"] = df["timestamp"] - t0
     else:
         t0 = 0
 
@@ -342,7 +419,6 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True):
     # df = pd.concat(events)
     # df = df.sort_values(by="timestamps")
     # df = df.dropna(subset="timestamps").reset_index(drop=True)
-
 
     # Sanity check that the first go cue is time 0
     # gocues = df.query("event == @SESSION_ALIGNMENT")
@@ -426,10 +502,63 @@ def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True):
         print(
             "Timestamps are adjusted such that `_in_session` timestamps start at the first go cue"
         )
-    df['timestamps'] = df['timestamps'] / MS_TO_S
+    df["timestamps"] = df["timestamps"] / MS_TO_S
     # pivot table based on timestamps
     if not tidy:
         df_pivoted = pd.pivot(df, index="timestamps", columns=["event"], values="data")
         return df_pivoted
     else:
         return df
+
+
+def create_df_fip_pavlovian(
+    nwb_filename, preprocessing=DEFAULT_FIP_PREPROCESSING, adjust_time=True, verbose=True
+):
+    """Tidy FIP for a single preprocessing variant, annotated with channel/roi.
+
+    Wraps :func:`create_df_fip`, keeps only the ``event`` series whose names end
+    in ``preprocessing`` (e.g. ``G_0_dff-bright_mc-iso-IRLS``), and adds a
+    ``channel`` (Iso/Green/Red) and ``roi`` (int) column parsed from each name.
+
+    Parameters
+    ----------
+    nwb_filename : str or NWBFile
+        Session to read.
+    preprocessing : str
+        dF/F variant suffix to keep, e.g. ``'dff-bright_mc-iso-IRLS'``.
+    adjust_time : bool
+        Passed through to :func:`create_df_fip` (align to first CS).
+    verbose : bool
+        Passed through to :func:`create_df_fip`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The tidy FIP rows for the requested variant, with ``channel``/``roi``.
+
+    Raises
+    ------
+    ValueError
+        If no series match ``preprocessing`` (typically a typo in the name).
+    """
+    df_fip = create_df_fip(nwb_filename, tidy=True, adjust_time=adjust_time, verbose=verbose)
+    if df_fip is None or len(df_fip) == 0:
+        raise ValueError("No fiber-photometry data returned by create_df_fip.")
+
+    suffix = "_" + preprocessing
+    sel = df_fip[df_fip["event"].astype(str).str.endswith(suffix)].copy()
+    if len(sel) == 0:
+        available = sorted(df_fip["event"].astype(str).unique())[:6]
+        raise ValueError(
+            "No FIP signals for preprocessing '%s'. Available e.g.: %s" % (preprocessing, available)
+        )
+
+    channels, rois = [], []
+    for name in sel["event"].astype(str):
+        base = name[: -len(suffix)]
+        m = re.match(r"(Iso|G|R)_(\d+)$", base)
+        channels.append(FIP_CHANNEL_MAP[m.group(1)] if m else None)
+        rois.append(int(m.group(2)) if m else None)
+    sel["channel"] = channels
+    sel["roi"] = rois
+    return sel[sel["channel"].notna()].copy()

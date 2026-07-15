@@ -19,8 +19,10 @@ dynamic = ["version"]
 dependencies = [
     'pandas',
     'numpy',
+    'matplotlib',
     'pynwb',
     'hdmf_zarr',
+    'aind-nwb-utils',
     'aind-data-access-api',
     'codeocean',
     'aind-dynamic-foraging-data-utils'
