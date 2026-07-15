@@ -106,15 +106,22 @@ class TestPavlovianAnalysis(unittest.TestCase):
                     self.assertEqual(len(pm), 6)
                     self.assertEqual(int(pm.sum()) + int((~pm).sum()), 6)
 
-    def test_analyze_nwb_writes_pdf(self):
-        """analyze_nwb writes a multi-page PDF and returns a summary."""
+    def test_analyze_nwb_writes_pdf_and_png(self):
+        """analyze_nwb writes a single-page PDF plus a PNG and returns a summary."""
+        from pypdf import PdfReader
+
         with tempfile.TemporaryDirectory() as d:
             path = _build_pavlovian_nwb(["CS1", "CS2", "CS3", "CS4"], os.path.join(d, "s3.nwb"))
             pdf = os.path.join(d, "summary.pdf")
             summary = pa.analyze_nwb(path, save_path=pdf, plot_types=["all_sess"])
-            self.assertTrue(os.path.exists(pdf))
+            self.assertTrue(os.path.exists(summary["pdf"]))
+            self.assertTrue(os.path.exists(summary["png"]))
+            self.assertEqual(len(PdfReader(summary["pdf"]).pages), 1)
             self.assertEqual(summary["n_roi"], 4)
             self.assertEqual(len(summary["cs"]), 4)
+            # anticipatory-lick numbers are attached per CS
+            self.assertIn("anti_lick_mean", summary["cs"]["CS1"])
+            self.assertIn("anti_window_s", summary["cs"]["CS1"])
 
     def test_channels_filter(self):
         """A channels filter restricts channels and ROIs analyzed."""

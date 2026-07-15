@@ -35,17 +35,17 @@ import matplotlib
 matplotlib.use("Agg")  # capsule/headless safe; callers may override before import
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
-from matplotlib.backends.backend_pdf import PdfPages  # noqa: E402
 
 from . import nwb_utils  # noqa: E402
 from .alignment import event_triggered_response  # noqa: E402
 
-# NWB channel prefix -> display label
-CHANNEL_MAP = {"Iso": "Iso", "G": "Green", "R": "Red"}
+# Data-shaping constants live in nwb_utils; re-used here for viz.
+canonical_event_name = nwb_utils.canonical_event_name  # re-export for convenience
+CHANNEL_MAP = nwb_utils.FIP_CHANNEL_MAP  # {'Iso':'Iso','G':'Green','R':'Red'}
+DEFAULT_PREPROCESSING = nwb_utils.DEFAULT_FIP_PREPROCESSING
+
 CHANNEL_ORDER = ["Iso", "Green", "Red"]
 CHANNEL_COLOR = {"Iso": "blue", "Green": "green", "Red": "magenta"}
-
-DEFAULT_PREPROCESSING = "dff-bright_mc-iso-IRLS"
 
 # CS -> (US kind, plot color, US-delivered label, omission label)
 CS_INFO = {
@@ -59,115 +59,54 @@ CS_INFO = {
 T_BEFORE = 5.0
 T_AFTER = 15.0
 BASELINE = 5.0
-OUTPUT_SR = 20.0  # Hz, ETR interpolation grid
+# ETR resamples onto this grid by interpolation; it need not equal the FIP
+# acquisition rate, it only sets the output resolution (FIP is ~20 Hz).
+OUTPUT_SR = 20.0
+PNG_DPI = 150  # resolution of the PNG export
 
-
-def canonical_event_name(raw):
-    """Map a raw pavlovian ``events`` string to a canonical key.
-
-    Returns one of ``Lick``/``Reward``/``Airpuff``/``CS1``..``CS4`` or ``None``.
-    """
-    s = str(raw).strip().lower()
-    if "lick" in s:
-        return "Lick"
-    if "airpuff" in s or "air_puff" in s or "puff" in s:
-        return "Airpuff"
-    if "reward" in s or "water" in s:
-        return "Reward"
-    m = re.search(r"cs[_\s]*([1-4])", s)
-    if m:
-        return "CS" + m.group(1)
-    return None
-
-
-def _pick_adjust_time(nwb):
-    """Return True if the session has a ``CS_start_time`` column to align to.
-
-    ``create_df_events`` / ``create_df_fip`` subtract the first ``CS_start_time``
-    when ``adjust_time=True``; if that column is absent we must use absolute time.
-    """
-    try:
-        trials = nwb.trials
-        return "CS_start_time" in set(trials.colnames)
-    except Exception:
-        return False
+# anticipatory-lick summary defaults
+ANTILICK_WINDOW = (0.0, 2.0)  # seconds after CS onset (CS->US delay)
+ANTILICK_SUMMARY = "mean"  # 'mean' -> mean +/- SD, 'median' -> median +/- IQR
+ANTILICK_SWARM_WIDTH = 0.28
 
 
 def load_pavlovian_dfs(nwb_or_path, preprocessing=DEFAULT_PREPROCESSING, adjust_time=None):
-    """Load and prepare the events / FIP dataframes for one session.
+    """Load the analysis-ready events / FIP dataframes for one session.
 
-    Uses ``nwb_utils.create_df_events`` and ``create_df_fip`` (so timestamps are
-    seconds on a shared clock). The FIP frame is filtered to the requested
-    ``preprocessing`` variant and annotated with ``channel`` (Iso/Green/Red) and
-    ``roi`` (int) columns parsed from the TimeSeries name.
+    Thin orchestration over ``nwb_utils`` (which does all the NWB manipulation:
+    ms->s conversion, ``adjust_time`` alignment, canonical event labels, and the
+    ``preprocessing`` filter with ``channel``/``roi`` parsing).
+
+    Parameters
+    ----------
+    nwb_or_path : str or NWBFile
+        Session to read.
+    preprocessing : str
+        dF/F variant suffix, e.g. ``'dff-bright_mc-iso-IRLS'``.
+    adjust_time : bool or None
+        Align time to the first CS. ``None`` -> auto (True when the session has a
+        ``CS_start_time`` trials column, else False).
 
     Returns
     -------
-    df_events : pd.DataFrame
-        Columns include ``timestamp`` (s), ``events``, ``trial``, ``canonical``.
-    df_fip : pd.DataFrame
-        Tidy FIP for the selected variant with added ``channel`` / ``roi``.
+    df_events : pandas.DataFrame
+        Tidy events with ``timestamp`` (s), ``events``, ``trial``, ``canonical``.
+    df_fip : pandas.DataFrame
+        Tidy FIP for the selected variant with ``channel`` / ``roi``.
     meta : dict
-        ``subject_id``, ``date``, ``sampling_rate`` (s), ``adjust_time``.
+        ``subject_id``, ``date``, ``adjust_time``.
     """
     nwb = nwb_utils.load_nwb_from_filename(nwb_or_path)
     if adjust_time is None:
-        adjust_time = _pick_adjust_time(nwb)
+        adjust_time = nwb_utils.can_align_to_cs(nwb)
 
     df_events = nwb_utils.create_df_events(nwb, adjust_time=adjust_time, verbose=False)
-    df_events = df_events.copy()
-    df_events["canonical"] = df_events["events"].map(canonical_event_name)
-
-    df_fip = nwb_utils.create_df_fip(nwb, tidy=True, adjust_time=adjust_time, verbose=False)
-    if df_fip is None or len(df_fip) == 0:
-        raise ValueError("No fiber-photometry data returned by create_df_fip.")
-
-    suffix = "_" + preprocessing
-    sel = df_fip[df_fip["event"].astype(str).str.endswith(suffix)].copy()
-    if len(sel) == 0:
-        available = sorted(df_fip["event"].astype(str).unique())[:6]
-        raise ValueError(
-            "No FIP signals for preprocessing '%s'. Available e.g.: %s" % (preprocessing, available)
-        )
-
-    def _parse(name):
-        """Parse '<Chan>_<ROI>_<preprocessing>' -> (channel_label, roi_int) or (None, None)."""
-        base = name[: -len(suffix)]
-        m = re.match(r"(Iso|G|R)_(\d+)$", base)
-        if not m:
-            return None, None
-        return CHANNEL_MAP[m.group(1)], int(m.group(2))
-
-    parsed = sel["event"].astype(str).map(_parse)
-    sel["channel"] = [p[0] for p in parsed]
-    sel["roi"] = [p[1] for p in parsed]
-    sel = sel[sel["channel"].notna()].copy()
-
-    # effective sampling rate from the FIP timestamps
-    ts = np.sort(sel["timestamps"].unique())
-    sr = 1.0 / float(np.median(np.diff(ts))) if len(ts) > 1 else OUTPUT_SR
-
-    # subject / date best-effort from session_id
-    sid = str(getattr(nwb, "session_id", "") or "")
-    subject_id, date = "unknown", "unknown"
-    if sid.startswith("behavior") or sid.startswith("FIP"):
-        parts = sid.split("_")
-        if len(parts) >= 3:
-            subject_id, date = parts[1], parts[2]
-    else:
-        parts = sid.split("_")
-        if len(parts) >= 2:
-            subject_id, date = parts[0], parts[1].replace(".json", "")
-    subj = getattr(nwb, "subject", None)
-    subject_id = (getattr(subj, "subject_id", "") if subj else "") or subject_id
-
-    meta = {
-        "subject_id": subject_id,
-        "date": date,
-        "sampling_rate": sr,
-        "adjust_time": bool(adjust_time),
-    }
-    return df_events, sel, meta
+    df_fip = nwb_utils.create_df_fip_pavlovian(
+        nwb, preprocessing=preprocessing, adjust_time=adjust_time, verbose=False
+    )
+    subject_id, session_date = nwb_utils.parse_session_name(nwb)
+    meta = {"subject_id": subject_id, "date": session_date, "adjust_time": bool(adjust_time)}
+    return df_events, df_fip, meta
 
 
 def detect_paradigm(df_events):
@@ -296,13 +235,18 @@ def _channels_present(df_fip, channels=None):
     return pairs
 
 
-def plot_session_overview(df_events, df_fip, paradigm, meta, channels=None):
-    """Whole-session traces for every channel/ROI with CS/US/lick markers."""
+def plot_session_overview(df_events, df_fip, paradigm, meta, channels=None, fig=None):
+    """Whole-session traces for every channel/ROI with CS/US/lick markers.
+
+    Draws into ``fig`` (a Figure or SubFigure) when given, else creates one.
+    """
     pairs = _channels_present(df_fip, channels)
     rois = sorted({r for _, r in pairs})
     chans = [c for c in CHANNEL_ORDER if any(cc == c for cc, _ in pairs)]
 
-    fig, ax = plt.subplots(figsize=(20, 3 + 1.2 * max(len(rois), 1)))
+    if fig is None:
+        fig = plt.figure(figsize=(20, 3 + 1.2 * max(len(rois), 1)))
+    ax = fig.subplots()
     for i, roi in enumerate(rois):
         off = -i * 100
         for c in chans:
@@ -340,10 +284,12 @@ def plot_session_overview(df_events, df_fip, paradigm, meta, channels=None):
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("dF/F (%)  (ROIs offset)")
-    ax.set_title("%s  %s   [%s]" % (meta["subject_id"], meta["date"], paradigm["stage"]))
+    ax.set_title(
+        "Session overview — %s %s [%s]" % (meta["subject_id"], meta["date"], paradigm["stage"]),
+        fontsize=10,
+    )
     ax.grid(True)
     ax.legend(loc="upper right", ncol=6, fontsize=8)
-    fig.tight_layout()
     return fig
 
 
@@ -357,8 +303,12 @@ def plot_cs_psth_grid(
     t_after=T_AFTER,
     baseline=BASELINE,
     output_sampling_rate=OUTPUT_SR,
+    fig=None,
 ):
-    """PSTH grid for one CS: rows = ROI, cols = channel, pos vs neg overlaid."""
+    """PSTH grid for one CS: rows = ROI, cols = channel, pos vs neg overlaid.
+
+    Draws into ``fig`` (a Figure or SubFigure) when given, else creates one.
+    """
     pairs = _channels_present(df_fip, channels)
     rois = sorted({r for _, r in pairs})
     chans = [c for c in CHANNEL_ORDER if any(cc == c for cc, _ in pairs)]
@@ -368,9 +318,9 @@ def plot_cs_psth_grid(
     pos_mask = cls[cs]["pos_mask"]
     pos_t, neg_t = onsets[pos_mask], onsets[~pos_mask]
 
-    fig, axes = plt.subplots(
-        len(rois), len(chans), figsize=(4.5 * len(chans), 3 * max(len(rois), 1)), squeeze=False
-    )
+    if fig is None:
+        fig = plt.figure(figsize=(4.5 * len(chans), 3 * max(len(rois), 1)))
+    axes = fig.subplots(len(rois), len(chans), squeeze=False)
     fig.suptitle(
         "%s %s  —  %s PSTH (%s vs %s)  n+=%d n-=%d"
         % (
@@ -410,17 +360,21 @@ def plot_cs_psth_grid(
                 ax.set_xlabel("Time - CS (s)")
             if ri == 0 and ci == 0:
                 ax.legend(fontsize=8)
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
     return fig
 
 
-def plot_lick_quant(df_events, paradigm, cls):
-    """Anticipatory vs consummatory lick counts per trial, per CS."""
+def plot_lick_quant(df_events, paradigm, cls, fig=None):
+    """Anticipatory vs consummatory lick counts per trial, per CS.
+
+    Draws into ``fig`` (a Figure or SubFigure) when given, else creates one.
+    """
     licks = df_events.loc[df_events["canonical"] == "Lick", "timestamp"].to_numpy(float)
     if len(licks) == 0 or len(paradigm["cs_list"]) == 0:
         return None
     cs_list = paradigm["cs_list"]
-    fig, axes = plt.subplots(1, len(cs_list), figsize=(5 * len(cs_list), 4), squeeze=False)
+    if fig is None:
+        fig = plt.figure(figsize=(5 * len(cs_list), 4))
+    axes = fig.subplots(1, len(cs_list), squeeze=False)
     for j, cs in enumerate(cs_list):
         ax = axes[0][j]
         onsets = cls[cs]["onsets"]
@@ -440,12 +394,145 @@ def plot_lick_quant(df_events, paradigm, cls):
         if j == 0:
             ax.set_ylabel("Lick #")
             ax.legend(fontsize=8)
-    fig.tight_layout()
     return fig
 
 
-def plot_reaction_time(df_events):
-    """Reaction time from each reward to the next lick (seconds)."""
+def _anticipatory_lick_counts(licks, onsets, window_s):
+    """Per-trial lick count inside ``[onset+w0, onset+w1)`` for each CS onset."""
+    w0, w1 = window_s
+    return np.array([int(np.sum((licks >= o + w0) & (licks < o + w1))) for o in onsets], dtype=int)
+
+
+def _beeswarm_offsets(values, width):
+    """Symmetric x-offsets so equal (tied) values fan out instead of overlapping."""
+    values = np.asarray(values, float)
+    offsets = np.zeros(len(values))
+    groups = {}
+    for idx, v in enumerate(values):
+        groups.setdefault(round(float(v)), []).append(idx)
+    for idxs in groups.values():
+        k = len(idxs)
+        if k == 1:
+            offsets[idxs[0]] = 0.0
+        else:
+            for pos, idx in zip(np.linspace(-width, width, k), idxs):
+                offsets[idx] = pos
+    return offsets
+
+
+def _antilick_label(cs, cls):
+    """X-axis label for a CS: name + empirical US-delivery rate (e.g. 'CS3\\n88%')."""
+    pm = cls[cs]["pos_mask"]
+    pct = (100.0 * pm.sum() / len(pm)) if len(pm) else 0.0
+    return "%s\n%.0f%%" % (cs, pct)
+
+
+def plot_anticipatory_lick_summary(
+    df_events,
+    paradigm,
+    cls,
+    meta,
+    window_s=ANTILICK_WINDOW,
+    summary=ANTILICK_SUMMARY,
+    swarm_width=ANTILICK_SWARM_WIDTH,
+    fig=None,
+):
+    """Beeswarm of anticipatory lick counts per CS (one dot = one trial).
+
+    A ``mean +/- SD`` marker sits beside each cloud (``summary='median'`` ->
+    ``median +/- IQR``). Draws into ``fig`` (a Figure or SubFigure) when given.
+    """
+    licks = df_events.loc[df_events["canonical"] == "Lick", "timestamp"].to_numpy(float)
+    names = paradigm["cs_list"]
+    if len(licks) == 0 or not names:
+        return None
+
+    if fig is None:
+        fig = plt.figure(figsize=(max(4.2, 1.6 * len(names) + 2.0), 3.6))
+    ax = fig.subplots()
+
+    tick_pos, tick_lab, all_counts = [], [], []
+    for i, cs in enumerate(names):
+        counts = _anticipatory_lick_counts(licks, cls[cs]["onsets"], window_s)
+        all_counts.append(counts)
+        col = CS_INFO[cs][1]
+        swarm_x, summ_x = i - 0.18, i + 0.22
+        if len(counts):
+            dx = _beeswarm_offsets(counts.astype(float), swarm_width)
+            ax.scatter(
+                swarm_x + dx,
+                counts,
+                s=26,
+                facecolor=col,
+                edgecolor="white",
+                linewidth=0.4,
+                alpha=0.75,
+                zorder=2,
+            )
+            if summary == "median":
+                center = float(np.median(counts))
+                lo_e = float(np.percentile(counts, 25))
+                hi_e = float(np.percentile(counts, 75))
+            else:  # mean +/- SD
+                center = float(np.mean(counts))
+                sd = float(np.std(counts))
+                lo_e, hi_e = center - sd, center + sd
+            ax.plot(
+                [summ_x, summ_x],
+                [lo_e, hi_e],
+                color="black",
+                lw=3.2,
+                solid_capstyle="round",
+                zorder=3,
+            )
+            ax.plot(summ_x, center, "o", color="black", ms=7, zorder=4)
+        tick_pos.append(i)
+        tick_lab.append(_antilick_label(cs, cls))
+
+    ax.set_ylabel("Lick #")
+    ax.set_xticks(tick_pos)
+    ax.set_xticklabels(tick_lab)
+    ax.set_xlim(-0.6, len(names) - 0.4)
+    ymax = max((c.max() for c in all_counts if len(c)), default=1)
+    ax.set_ylim(-0.5, ymax * 1.08 + 1)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.tick_params(direction="out", length=4)
+    ax.set_title(
+        "%s  %s   anticipatory lick (%.0f-%.0fs)"
+        % (meta["subject_id"], meta["date"], window_s[0], window_s[1]),
+        fontsize=9,
+    )
+    return fig
+
+
+def _anticipatory_summary(df_events, paradigm, cls, window_s):
+    """Per-CS anticipatory-lick numbers for the JSON/return summary."""
+    licks = df_events.loc[df_events["canonical"] == "Lick", "timestamp"].to_numpy(float)
+    out = {}
+    for cs in paradigm["cs_list"]:
+        counts = _anticipatory_lick_counts(licks, cls[cs]["onsets"], window_s).astype(float)
+        pm = cls[cs]["pos_mask"]
+        rec = {
+            "anti_window_s": [float(window_s[0]), float(window_s[1])],
+            "anti_lick_mean": float(np.mean(counts)) if len(counts) else float("nan"),
+            "anti_lick_sd": float(np.std(counts)) if len(counts) else float("nan"),
+            "anti_lick_mean_pos": (
+                float(np.mean(counts[pm])) if len(counts) and pm.any() else float("nan")
+            ),
+            "anti_lick_mean_neg": (
+                float(np.mean(counts[~pm])) if len(counts) and (~pm).any() else float("nan")
+            ),
+        }
+        out[cs] = rec
+    return out
+
+
+def plot_reaction_time(df_events, fig=None):
+    """Reaction time from each reward to the next lick (seconds).
+
+    Draws into ``fig`` (a Figure or SubFigure) when given, else creates one.
+    """
     rew = df_events.loc[df_events["canonical"] == "Reward", "timestamp"].to_numpy(float)
     lick = np.sort(df_events.loc[df_events["canonical"] == "Lick", "timestamp"].to_numpy(float))
     if len(rew) == 0 or len(lick) == 0:
@@ -456,7 +543,9 @@ def plot_reaction_time(df_events):
         if len(nxt):
             rt[i] = nxt[0] - r
     good = rt[~np.isnan(rt)]
-    fig, ax = plt.subplots(1, 3, figsize=(12, 4))
+    if fig is None:
+        fig = plt.figure(figsize=(12, 4))
+    ax = fig.subplots(1, 3)
     ax[0].plot(rt)
     ax[0].set_xlabel("Reward #")
     ax[0].set_ylabel("RT (s)")
@@ -466,34 +555,95 @@ def plot_reaction_time(df_events):
         ax[2].hist(good[good < 0.5])
     ax[1].set_xlabel("RT (s)")
     ax[2].set_xlabel("RT < 0.5 s")
-    fig.tight_layout()
     return fig
 
 
 def _resolve_want(plot_types):
     """Resolve the requested plot set into a concrete subset of names."""
     if plot_types is None or "all" in plot_types or "all_sess" in plot_types:
-        return {"session", "psth", "lick", "rt"}
+        return {"session", "psth", "lick", "antilick", "rt"}
     return set(plot_types)
 
 
-def _make_figures(df_events, df_fip, paradigm, cls, meta, channels, want, psth_kw):
-    """Build the requested figures and return them as a list."""
-    figs = []
+def _summary_sections(
+    df_events, df_fip, paradigm, cls, meta, channels, want, psth_kw, antilick_kw, n_roi
+):
+    """Return ``[(height, draw_fn), ...]`` for each panel to place in the page.
+
+    ``draw_fn`` takes a target SubFigure and renders one section into it.
+    """
+    licks = df_events.loc[df_events["canonical"] == "Lick", "timestamp"].to_numpy(float)
+    rews = df_events.loc[df_events["canonical"] == "Reward", "timestamp"].to_numpy(float)
+    row_h = 3.0 * max(n_roi, 1)
+    sections = []
+
     if "session" in want:
-        figs.append(plot_session_overview(df_events, df_fip, paradigm, meta, channels))
+        sections.append(
+            (
+                3.0 + 1.2 * max(n_roi, 1),
+                lambda sf: plot_session_overview(
+                    df_events, df_fip, paradigm, meta, channels, fig=sf
+                ),
+            )
+        )
     if "psth" in want:
         for cs in paradigm["cs_list"]:
-            figs.append(plot_cs_psth_grid(df_fip, cs, cls, meta, channels, **psth_kw))
-    if "lick" in want:
-        f = plot_lick_quant(df_events, paradigm, cls)
-        if f is not None:
-            figs.append(f)
-    if "rt" in want:
-        f = plot_reaction_time(df_events)
-        if f is not None:
-            figs.append(f)
-    return figs
+            sections.append(
+                (
+                    row_h + 1.2,
+                    lambda sf, cs=cs: plot_cs_psth_grid(
+                        df_fip, cs, cls, meta, channels, fig=sf, **psth_kw
+                    ),
+                )
+            )
+    if "lick" in want and len(licks) and len(paradigm["cs_list"]):
+        sections.append((4.0, lambda sf: plot_lick_quant(df_events, paradigm, cls, fig=sf)))
+    if "antilick" in want and len(licks) and len(paradigm["cs_list"]):
+        sections.append(
+            (
+                4.0,
+                lambda sf: plot_anticipatory_lick_summary(
+                    df_events, paradigm, cls, meta, fig=sf, **antilick_kw
+                ),
+            )
+        )
+    if "rt" in want and len(rews) and len(licks):
+        sections.append((4.0, lambda sf: plot_reaction_time(df_events, fig=sf)))
+    return sections
+
+
+def render_summary_figure(
+    df_events, df_fip, paradigm, cls, meta, channels, want, psth_kw, antilick_kw
+):
+    """Compose all requested panels into ONE tall figure and return it.
+
+    Returns ``None`` if there is nothing to draw.
+    """
+    pairs = _channels_present(df_fip, channels)
+    n_roi = len({r for _, r in pairs})
+    n_chan = len({c for c, _ in pairs})
+
+    sections = _summary_sections(
+        df_events, df_fip, paradigm, cls, meta, channels, want, psth_kw, antilick_kw, n_roi
+    )
+    if not sections:
+        return None
+
+    heights = [h for h, _ in sections]
+    width = max(20.0, 4.5 * max(n_chan, 1))
+    fig = plt.figure(figsize=(width, sum(heights)), layout="constrained")
+    fig.suptitle(
+        "%s  %s   [%s]" % (meta["subject_id"], meta["date"], paradigm["stage"]),
+        fontsize=15,
+        fontweight="bold",
+    )
+
+    subfigs = fig.subfigures(len(sections), 1, height_ratios=heights)
+    if len(sections) == 1:
+        subfigs = [subfigs]
+    for (_, draw_fn), sf in zip(sections, subfigs):
+        draw_fn(sf)
+    return fig
 
 
 def _build_summary(paradigm, cls, meta, chan_labels, n_roi):
@@ -504,20 +654,12 @@ def _build_summary(paradigm, cls, meta, chan_labels, n_roi):
         "stage": paradigm["stage"],
         "n_roi": n_roi,
         "channels": chan_labels,
-        "sampling_rate": meta["sampling_rate"],
         "adjust_time": meta["adjust_time"],
         "cs": {},
     }
     print(
-        "[detected] %s | CS=%s | ROIs=%d | channels=%s | sr=%.2fHz | adjust_time=%s"
-        % (
-            paradigm["stage"],
-            paradigm["cs_list"],
-            n_roi,
-            chan_labels,
-            meta["sampling_rate"],
-            meta["adjust_time"],
-        )
+        "[detected] %s | CS=%s | ROIs=%d | channels=%s | adjust_time=%s"
+        % (paradigm["stage"], paradigm["cs_list"], n_roi, chan_labels, meta["adjust_time"])
     )
     for cs in paradigm["cs_list"]:
         pm = cls[cs]["pos_mask"]
@@ -544,6 +686,9 @@ def analyze_nwb(
     t_after=T_AFTER,
     baseline=BASELINE,
     output_sampling_rate=OUTPUT_SR,
+    antilick_window=ANTILICK_WINDOW,
+    antilick_summary=ANTILICK_SUMMARY,
+    antilick_swarm_width=ANTILICK_SWARM_WIDTH,
 ):
     """End-to-end: load -> detect -> classify -> visualize a Pavlovian session.
 
@@ -556,15 +701,21 @@ def analyze_nwb(
     channels : dict or None
         Optional ``{'<Chan>_<ROI>': 'location'}`` filter; None -> all present.
     save_path : str or None
-        If given, a multi-page summary PDF is written there.
+        If given, the combined single-page summary is written here as a PDF,
+        and a PNG is written alongside with the same stem (``.png``).
     plot_types : list or None
         ``['all_sess']``/``['all']`` -> everything, or a subset of
-        ``{'session','psth','lick','rt'}``.
+        ``{'session','psth','lick','antilick','rt'}``.
+    antilick_window : tuple
+        ``(start, end)`` seconds after CS onset for the anticipatory-lick count.
+    antilick_summary : str
+        ``'mean'`` (mean +/- SD) or ``'median'`` (median +/- IQR).
 
     Returns
     -------
     dict
         Summary with stage, per-CS trial counts, channels, and roi count.
+        When saved, ``pdf`` and ``png`` keys hold the output paths.
     """
     df_events, df_fip, meta = load_pavlovian_dfs(nwb_or_path, preprocessing, adjust_time)
     paradigm = detect_paradigm(df_events)
@@ -577,21 +728,35 @@ def analyze_nwb(
 
     summary = _build_summary(paradigm, cls, meta, chan_labels, n_roi)
 
-    psth_kw = {
-        "t_before": t_before,
-        "t_after": t_after,
-        "baseline": baseline,
-        "output_sampling_rate": output_sampling_rate,
-    }
-    figs = _make_figures(df_events, df_fip, paradigm, cls, meta, channels, want, psth_kw)
+    # anticipatory-lick numbers into the per-CS summary (also lands in the JSON)
+    anti = _anticipatory_summary(df_events, paradigm, cls, antilick_window)
+    for cs, rec in anti.items():
+        summary["cs"].get(cs, {}).update(rec)
 
     if save_path:
-        with PdfPages(save_path) as pdf:
-            for fig in figs:
-                pdf.savefig(fig)
-        summary["pdf"] = save_path
-        print("[saved] %s" % save_path)
+        psth_kw = {
+            "t_before": t_before,
+            "t_after": t_after,
+            "baseline": baseline,
+            "output_sampling_rate": output_sampling_rate,
+        }
+        antilick_kw = {
+            "window_s": antilick_window,
+            "summary": antilick_summary,
+            "swarm_width": antilick_swarm_width,
+        }
+        fig = render_summary_figure(
+            df_events, df_fip, paradigm, cls, meta, channels, want, psth_kw, antilick_kw
+        )
+        if fig is not None:
+            pdf_path = save_path if save_path.endswith(".pdf") else save_path + ".pdf"
+            png_path = pdf_path[:-4] + ".png"
+            fig.savefig(pdf_path)
+            fig.savefig(png_path, dpi=PNG_DPI)
+            plt.close(fig)
+            summary["pdf"] = pdf_path
+            summary["png"] = png_path
+            print("[saved] %s" % pdf_path)
+            print("[saved] %s" % png_path)
 
-    for fig in figs:
-        plt.close(fig)
     return summary
