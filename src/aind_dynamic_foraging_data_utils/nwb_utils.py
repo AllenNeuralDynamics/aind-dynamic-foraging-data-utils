@@ -515,7 +515,7 @@ def create_df_trials(  # NOQA C901
             warnings.warn("Rewarded trials without reward time")
         else:
             raise AssertionError("Rewarded trials without reward time")
-    
+
     if np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0:
         if ignore_errors:
             warnings.warn("Rewarded trials without choice time")
