@@ -516,9 +516,11 @@ def create_df_trials(  # NOQA C901
         else:
             raise AssertionError("Rewarded trials without reward time")
 
-    assert (
-        np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0
-    ), "Rewarded trials without choice time"
+    if np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0:
+        if ignore_errors:
+            warnings.warn("Rewarded trials without choice time")
+        else:
+            raise AssertionError("Rewarded trials without choice time")
 
     earned_df = rewarded_df.query("not extra_reward")
     if not np.all(earned_df["choice_time_in_session"] <= earned_df["reward_time_in_session"]):
@@ -532,9 +534,11 @@ def create_df_trials(  # NOQA C901
         else:
             raise AssertionError("Reward before choice time")
 
-    assert np.all(
-        rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE
-    ), "Rewarded trial with negative choice_time_in_trial"
+    if np.all(rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE):
+        if ignore_errors:
+            warnings.warn("Rewarded trial with negative choice_time_in_trial")
+        else:
+            raise AssertionError("Rewarded trial with negative choice_time_in_trial")
 
     check_rew_time = np.isnan(
         df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"]
