@@ -76,17 +76,33 @@ def canonical_event_name(event_name: str) -> Optional[str]:
 
 
 def parse_session_name(nwb_filename):
-    """Return ``(subject_id, session_date)`` from the NWB session name.
+    """Return ``(subject_id, session_date)`` for the acquired session.
 
-    AIND NWB objects always carry a session name in ``nwb.session_id`` shaped
-    like ``behavior_<subject>_<date>_<time>`` (or ``<subject>_<date>_...`` for
-    the older json-style names), so subject and date are read straight from it.
+    ``subject_id`` comes from ``nwb.subject.subject_id`` when present
+    (authoritative), otherwise it is parsed from ``nwb.session_id``.
+
+    ``session_date`` is the **experiment / acquisition date** taken from
+    ``nwb.session_start_time``. We deliberately do NOT parse the date out of the
+    session/asset name: derived assets are named like
+    ``behavior_<subject>_<expdate>_..._processed_<procdate>_...`` (or reordered),
+    so a name-based date can pick up the packaging/processing date instead of
+    when the experiment was actually run.
     """
     nwb = load_nwb_from_filename(nwb_filename)
-    splits = nwb.session_id.split("_")
-    if nwb.session_id.startswith("behavior") or nwb.session_id.startswith("FIP"):
-        return splits[1], splits[2]
-    return splits[0], splits[1]
+
+    subj = getattr(nwb, "subject", None)
+    subject_id = getattr(subj, "subject_id", None) if subj is not None else None
+    if not subject_id:
+        session_id = str(nwb.session_id or "")
+        splits = session_id.split("_")
+        if session_id.startswith("behavior") or session_id.startswith("FIP"):
+            subject_id = splits[1] if len(splits) > 1 else "unknown"
+        else:
+            subject_id = splits[0] if splits and splits[0] else "unknown"
+
+    start = getattr(nwb, "session_start_time", None)
+    session_date = start.strftime("%Y-%m-%d") if start is not None else "unknown"
+    return str(subject_id), str(session_date)
 
 
 def can_align_to_cs(nwb_filename):
