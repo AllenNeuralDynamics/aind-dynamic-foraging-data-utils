@@ -534,7 +534,7 @@ def create_df_trials(  # NOQA C901
         else:
             raise AssertionError("Reward before choice time")
 
-    if np.all(rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE:
+    if np.all(rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE):
         if ignore_errors:
             warnings.warn("Rewarded trial with negative choice_time_in_trial")
         else:
