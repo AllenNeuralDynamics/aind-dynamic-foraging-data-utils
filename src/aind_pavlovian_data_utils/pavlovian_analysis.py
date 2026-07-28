@@ -37,7 +37,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 from . import nwb_utils  # noqa: E402
-from .alignment import event_triggered_response  # noqa: E402
+from aind_dynamic_foraging_data_utils.alignment import event_triggered_response # noqa: E402
 
 # Data-shaping constants live in nwb_utils; re-used here for viz.
 canonical_event_name = nwb_utils.canonical_event_name  # re-export for convenience
