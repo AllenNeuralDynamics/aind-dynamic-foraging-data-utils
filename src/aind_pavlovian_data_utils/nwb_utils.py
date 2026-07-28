@@ -379,8 +379,8 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True):
             .reset_index()
         )
 
-        df["timestamp_raw"] = df["timestamp"]
-        df["timestamp"] = df["timestamp"] / MS_TO_S
+        df["timestamps_raw"] = df["timestamp"]
+        df["timestamps"] = df["timestamp"] / MS_TO_S
         df["canonical"] = df["events"].map(canonical_event_name)
 
     # Determine time 0 as first go Cue
