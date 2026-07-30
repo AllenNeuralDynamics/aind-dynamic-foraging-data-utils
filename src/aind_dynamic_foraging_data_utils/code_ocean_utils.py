@@ -86,29 +86,37 @@ def get_assets(  # NOQA: C901
         host="api.allenneuraldynamics.org", database="metadata_index", collection="data_assets"
     )
 
-    # Filter by task
-    if len(task) > 0:
-        task_filter = {"$or": []}
-        for t in task:
-            task_filter["$or"].append(
-                {
-                    "session.session_type": {"$regex": "^{}".format(t)},
-                }
-            )
+    # Query based on subject id
+    if len(subjects) == 0:
+        print("Query will be slow without explicit subject ids")
+        subject_filter = {}
     else:
-        task_filter = {
-            "session.session_type": {"$regex": "^(Uncoupled|Coupled)( Without)? Baiting"},
-        }
+        subjects = [str(x) for x in subjects]
+        subject_filter = {"subject.subject_id": {"$in": subjects}}
+
+    # Do we want processed or raw assets
+    if processed:
+        processed_filter = {"data_description.data_level": "derived"}
+    else:
+        processed_filter = {"data_description.data_level": "raw"}
 
     # Filter by data modality
     if len(modality) > 0:
         modality_filter = {"$and": []}
         for m in modality:
-            modality_filter["$and"].append(
-                {"data_description.modality.abbreviation": {"$regex": m}}
-            )
+            modality_filter["$and"].append({"data_description.modality.abbreviation": m})
     else:
         modality_filter = {}
+
+    # Filter by task
+    if len(task) == 0:
+        task = [
+            "Uncoupled Baiting",
+            "Coupled Baiting",
+            "Uncoupled Without Baiting",
+            "Coupled Without Baiting",
+        ]
+    task_filter = {"session.session_type": {"$in": task}}
 
     # Filter by stage:
     if len(stage) > 0:
@@ -118,21 +126,8 @@ def get_assets(  # NOQA: C901
     else:
         stage_filter = {}
 
-    # Do we want processed or raw assets
-    if processed:
-        processed_string = "_.*processed_[0-9-_]*"
-    else:
-        processed_string = (
-            "_[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
-        )
-
-    # Query based on subject id
-    if len(subjects) == 0:
-        print("Query will be slow without explicit subject ids")
-        subject_filter = {
-            "name": {"$regex": "^behavior_[0-9]*{}$".format(processed_string)},
-        }
-        # Return only essential information for performance
+    # What information to return
+    if (len(input_projection) == 0) & len(subjects) == 0:
         projection = {
             "name": 1,
             "_id": 1,
@@ -142,15 +137,9 @@ def get_assets(  # NOQA: C901
             "subject.subject_id": 1,
             **input_projection,
         }
+    elif len(input_projection) > 0:
+        projection = input_projection
     else:
-        subject_filter = {
-            "name": {
-                "$regex": "^behavior_("
-                + "|".join([str(x) for x in subjects])
-                + "){}$".format(processed_string)
-            },
-        }
-        # Return all information
         projection = None
 
     # Query
@@ -158,8 +147,9 @@ def get_assets(  # NOQA: C901
         client.retrieve_docdb_records(
             filter_query={
                 **subject_filter,
-                **task_filter,
+                **processed_filter,
                 **modality_filter,
+                **task_filter,
                 **stage_filter,
                 **extra_filter,
             },
@@ -186,7 +176,7 @@ def get_assets(  # NOQA: C901
 
     # Make code ocean ID a column
     results_no_duplicates["code_ocean_asset_id"] = [
-        link["Code Ocean"][0] if "Code Ocean" in link else ""
+        link["Code Ocean"][0] if ("Code Ocean" in link) and (len(link["Code Ocean"]) > 0) else ""
         for link in results_no_duplicates["external_links"]
     ]
 
