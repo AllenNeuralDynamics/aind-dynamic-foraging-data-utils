@@ -221,18 +221,34 @@ def get_assets_v2(
     else:
         processed_filter = {"data_description.data_level": "raw"}
 
-    # modality_filter
-    # task_filter
-    #   need to figure out how to parse in v2
+    # Filter by data modality
+    if len(modality) > 0:
+        modality_filter = {"$and": []}
+        for m in modality:
+            modality_filter["$and"].append({"data_description.modality.abbreviation": m})
+    else:
+        modality_filter = {}
+    
+    # Filter by task
+    # TODO, parse by acquisition version here ?
+    if len(task) == 0:
+        task = [
+            "Uncoupled Baiting",
+            "Coupled Baiting",
+            "Uncoupled Without Baiting",
+            "Coupled Without Baiting",
+            "AindDynamicForaging"
+        ]
+    task_filter = {"acquisition.acquisition_type": {"$in": task}}
 
-                **stage_filter,
-                **extra_filter,
-            },
-            projection=projection,
+    # stage_filter,
+    # extra_filter,
+    # projection=projection,
     results = pd.DataFrame(client.retrieve_docdb_records(
         filter_query={
-            "acquisition.acquisition_type":"AindDynamicForaging",
-            **processed_filter
+            **subject_filter,
+            **processed_filter,
+            **modality_filter
         }
         )
     return
