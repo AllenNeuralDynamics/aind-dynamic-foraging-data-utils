@@ -241,7 +241,7 @@ def get_assets_v2(
         ]
     task_filter = {"acquisition.acquisition_type": {"$in": task}}
 
-    # stage_filter,
+    # stage_filter, acquisition.stimulus_epochs.curriculum_status
     # extra_filter,
     # projection=projection,
     results = pd.DataFrame(client.retrieve_docdb_records(
