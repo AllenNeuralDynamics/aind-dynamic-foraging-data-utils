@@ -22,6 +22,16 @@ from codeocean.data_asset import DataAssetAttachParams
 
 from aind_dynamic_foraging_data_utils import nwb_utils
 
+def get_assets(metadata_version='v1',**kwargs):
+    '''
+    Top level function that queries either docdb v1 or v2
+    '''
+    if metadata_version == "v1":
+        return get_assets_v1(**kwargs)
+    elif metadata_version == "v2":
+        return get_assets_v2(**kwargs)
+    else:
+        raise ValueError(f"Unknown input argument {metadata_version}")
 
 def get_subject_assets(subject_id, **kwargs):
     """
@@ -51,7 +61,7 @@ def get_subject_assets(subject_id, **kwargs):
     return get_assets(subjects=[subject_id], **kwargs)
 
 
-def get_assets(  # NOQA: C901
+def get_assets_v1(  # NOQA: C901
     subjects=[],
     processed=True,
     task=[],
@@ -182,6 +192,50 @@ def get_assets(  # NOQA: C901
 
     return results_no_duplicates.reset_index(drop=True)
 
+def get_assets_v2(
+    subjects=[],
+    processed=True,
+    task=[],
+    modality=["behavior"],
+    stage=[],
+    acquisition_version=['v1','v2'],
+    extra_filter={},
+    input_projection={},
+):
+    # Create metadata client
+    client = MetadataDbClient(
+        host="api.allenneuraldynamics.org", version="v2" 
+    )
+
+    # Query based on subject id
+    if len(subjects) == 0:
+        print("Query will be slow without explicit subject ids")
+        subject_filter = {}
+    else:
+        subjects = [str(x) for x in subjects]
+        subject_filter = {"subject.subject_id": {"$in": subjects}}
+
+    # Do we want processed or raw assets
+    if processed:
+        processed_filter = {"data_description.data_level": "derived"}
+    else:
+        processed_filter = {"data_description.data_level": "raw"}
+
+    # modality_filter
+    # task_filter
+    #   need to figure out how to parse in v2
+
+                **stage_filter,
+                **extra_filter,
+            },
+            projection=projection,
+    results = pd.DataFrame(client.retrieve_docdb_records(
+        filter_query={
+            "acquisition.acquisition_type":"AindDynamicForaging",
+            **processed_filter
+        }
+        )
+    return
 
 def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
     """
