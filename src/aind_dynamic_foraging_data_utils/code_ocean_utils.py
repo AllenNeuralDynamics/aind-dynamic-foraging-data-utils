@@ -195,7 +195,7 @@ def get_assets_v1(  # NOQA: C901
     return results_no_duplicates.reset_index(drop=True)
 
 
-def get_assets_v2(
+def get_assets_v2(  # NOQA C901
     subjects=[],
     processed=True,
     task=[],
@@ -245,9 +245,8 @@ def get_assets_v2(
         # Filter by Stage
         if len(stage) > 0:
             stage_filter = {
-                "acquisition.stimulus_epochs.performance_metrics.output_parameters.task_parameters.stage_in_use": {
-                    "$in": stage
-                }
+                "acquisition.stimulus_epochs.performance_metrics"
+                + ".output_parameters.task_parameters.stage_in_use": {"$in": stage}
             }
         else:
             stage_filter = {}
@@ -321,7 +320,7 @@ def get_assets_v2(
     results = results.sort_values(by="name")
     results_no_duplicates = results.drop_duplicates(subset="session_name", keep="last").copy()
 
-    ## If there were duplicates, make a warning and print the duplicates
+    # If there were duplicates, make a warning and print the duplicates
     if len(results) != len(results_no_duplicates):
         duplicated = results[results.duplicated(subset="session_name", keep=False)]
         warnings.warn("Duplicate session entries in docDB")
