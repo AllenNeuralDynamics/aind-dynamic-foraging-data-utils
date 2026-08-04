@@ -120,6 +120,11 @@ def get_assets_v1(  # NOQA: C901
     Example
     results = get_assets_v1(subjects=[my_id])
     """
+    warnings.warn(
+        "Using metadata v1 will be phased out, switch your workflows now to metadata v2",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
     # Create metadata client
     client = MetadataDbClient(
         host="api.allenneuraldynamics.org", database="metadata_index", collection="data_assets"
@@ -397,7 +402,9 @@ def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
     warnings.warn(
         "generate_data_assets_attach_params is Deprecated. "
         + "We no longer recommend programmatically attaching assets. "
-        + "Instead attach manually or use the s3 location directly"
+        + "Instead attach manually or use the s3 location directly",
+        category=DeprecationWarning,
+        stacklevel=2,
     )
     data_assets = []
     for ID in data_asset_IDs:
@@ -422,10 +429,13 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
     co_assets = attach_data(results['code_ocean_asset_id'].values)
     """
     warnings.warn(
-        "attach_data is deprecated. "
+        "attach_data is Deprecated. "
         + "We no longer recommend programmatically attaching assets. "
-        + "Instead attach manually or use the s3 location directly"
+        + "Instead attach manually or use the s3 location directly",
+        category=DeprecationWarning,
+        stacklevel=2,
     )
+
     # Check for too many assets
     if len(data_asset_IDs) > 100:
         warnings.warn(
@@ -476,9 +486,11 @@ def check_data_assets(co_assets, data_asset_IDs):
     but its a useful quick check
     """
     warnings.warn(
-        "check_data_assets is deprecated. "
+        "check_data_assets is Deprecated. "
         + "We no longer recommend programmatically attaching assets. "
-        + "Instead attach manually or use the s3 location directly"
+        + "Instead attach manually or use the s3 location directly",
+        category=DeprecationWarning,
+        stacklevel=2,
     )
     if all([x.ready for x in co_assets if x.id in data_asset_IDs]):
         print("all data assets are ready")
