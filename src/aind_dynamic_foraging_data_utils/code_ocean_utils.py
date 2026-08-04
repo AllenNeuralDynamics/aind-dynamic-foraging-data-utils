@@ -236,6 +236,7 @@ def get_assets_v2(
     #   "Uncoupled Without Baiting",
     #   "Coupled Without Baiting",
     # TODO, should update this section to filter for v1 or v2 or both acquisition systems
+    # for v1, acquisition.acquisition_type will contain the task name
     if len(task) > 0:
         task_filter = {
             "acquisition.stimulus_epochs.training_protocol_name": {"$in": task},
@@ -247,10 +248,29 @@ def get_assets_v2(
         }
 
     # Filter by Stage
+    # TODO, if acquisition is v1, then need to check in:
+    # acquisition.stimulus_epochs.performance_metrics.output_parameters.task_parameters.stage_in_use
     if len(stage) > 0:
         stage_filter = {"acquisition.stimulus_epochs.curriculum_status": {"$in": stage}}
     else:
         stage_filter = {}
+
+    # TODO, need to update this
+    ## What information to return
+    #if (len(input_projection) == 0) & len(subjects) == 0:
+    #    projection = {
+    #        "name": 1,
+    #        "_id": 1,
+    #        "session": 1,
+    #        "session_name": 1,
+    #        "external_links": 1,
+    #        "subject.subject_id": 1,
+    #        **input_projection,
+    #    }
+    #elif len(input_projection) > 0:
+    #    projection = input_projection
+    #else:
+    #    projection = None
 
     # extra_filter,
     results = pd.DataFrame(
