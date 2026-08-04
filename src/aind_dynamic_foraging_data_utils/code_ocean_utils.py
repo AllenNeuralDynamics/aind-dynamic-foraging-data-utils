@@ -226,51 +226,75 @@ def get_assets_v2(
     if len(modality) > 0:
         modality_filter = {"$and": []}
         for m in modality:
-            modality_filter["$and"].append({"data_description.modality.abbreviation": m})
+            modality_filter["$and"].append({"data_description.modalities.abbreviation": m})
     else:
         modality_filter = {}
 
-    # Filter by task
-    #   "Uncoupled Baiting",
-    #   "Coupled Baiting",
-    #   "Uncoupled Without Baiting",
-    #   "Coupled Without Baiting",
-    # TODO, should update this section to filter for v1 or v2 or both acquisition systems
-    # for v1, acquisition.acquisition_type will contain the task name
-    if len(task) > 0:
-        task_filter = {
-            "acquisition.stimulus_epochs.training_protocol_name": {"$in": task},
-            "acquisition.acquisition_type": "AindDynamicForaging",
-        }
-    else:
-        task_filter = {
-            "acquisition.acquisition_type": "AindDynamicForaging",
-        }
+    # Filter by task and stage
+    if "v1" in acquisition_version:
+        # Filter by Task
+        if len(task) == 0:
+            task = [
+                "Uncoupled Baiting",
+                "Coupled Baiting",
+                "Uncoupled Without Baiting",
+                "Coupled Without Baiting",
+            ]
+        task_filter = {"acquisition.acquisition_type": {"$in": task}}
 
-    # Filter by Stage
-    # TODO, if acquisition is v1, then need to check in:
-    # acquisition.stimulus_epochs.performance_metrics.output_parameters.task_parameters.stage_in_use
-    if len(stage) > 0:
-        stage_filter = {"acquisition.stimulus_epochs.curriculum_status": {"$in": stage}}
-    else:
-        stage_filter = {}
+        # Filter by Stage
+        if len(stage) > 0:
+            stage_filter = {
+                "acquisition.stimulus_epochs.performance_metrics.output_parameters.task_parameters.stage_in_use": {
+                    "$in": stage
+                }
+            }
+        else:
+            stage_filter = {}
 
-    # TODO, need to update this
-    ## What information to return
-    #if (len(input_projection) == 0) & len(subjects) == 0:
-    #    projection = {
-    #        "name": 1,
-    #        "_id": 1,
-    #        "session": 1,
-    #        "session_name": 1,
-    #        "external_links": 1,
-    #        "subject.subject_id": 1,
-    #        **input_projection,
-    #    }
-    #elif len(input_projection) > 0:
-    #    projection = input_projection
-    #else:
-    #    projection = None
+        # Combine Filters
+        v1_filter = {**task_filter, **stage_filter}
+    if "v2" in acquisition_version:
+        # Filter by Task
+        if len(task) > 0:
+            task_filter = {
+                "acquisition.stimulus_epochs.training_protocol_name": {"$in": task},
+                "acquisition.acquisition_type": "AindDynamicForaging",
+            }
+        else:
+            task_filter = {
+                "acquisition.acquisition_type": "AindDynamicForaging",
+            }
+
+        # Filter by Stage
+        if len(stage) > 0:
+            stage_filter = {"acquisition.stimulus_epochs.curriculum_status": {"$in": stage}}
+        else:
+            stage_filter = {}
+
+        # Combine filters
+        v2_filter = {**task_filter, **stage_filter}
+
+    # Determine which acquisition system to filter for
+    if ("v1" in acquisition_version) & ("v2" in acquisition_version):
+        task_filter = {"$or": [v1_filter, v2_filter]}
+    elif "v1" in acquisition_version:
+        task_filter = v1_filter
+    else:
+        task_filter = v2_filter
+
+    # What information to return
+    if (len(input_projection) == 0) & len(subjects) == 0:
+        projection = {
+            "name": 1,
+            "_id": 1,
+            "subject.subject_id": 1,
+            **input_projection,
+        }
+    elif len(input_projection) > 0:
+        projection = input_projection
+    else:
+        projection = None
 
     # extra_filter,
     results = pd.DataFrame(
@@ -280,7 +304,6 @@ def get_assets_v2(
                 **processed_filter,
                 **modality_filter,
                 **task_filter,
-                **stage_filter,
                 **extra_filter,
             },
             projection=projection,
