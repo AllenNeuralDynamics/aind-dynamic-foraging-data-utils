@@ -315,29 +315,26 @@ def get_assets_v2(
         print("No results found for {}".format(subjects))
         return
 
-    # TODO, look for duplicate entries
     # look for duplicate entries, taking the last by processing time
-    # results["session_name"] = [x.split("_processed")[0] for x in results["name"]]
-    # results = results.sort_values(by="name")
-    # results_no_duplicates = results.drop_duplicates(subset="session_name", keep="last").copy()
+    results["session_name"] = [x.split("_processed")[0] for x in results["name"]]
+    results = results.sort_values(by="name")
+    results_no_duplicates = results.drop_duplicates(subset="session_name", keep="last").copy()
 
     ## If there were duplicates, make a warning and print the duplicates
-    # if len(results) != len(results_no_duplicates):
-    #    duplicated = results[results.duplicated(subset="session_name", keep=False)]
-    #    warnings.warn("Duplicate session entries in docDB")
-    #    for index, row in duplicated.iterrows():
-    #        print("duplicated: {}".format(row["name"]))
+    if len(results) != len(results_no_duplicates):
+        duplicated = results[results.duplicated(subset="session_name", keep=False)]
+        warnings.warn("Duplicate session entries in docDB")
+        for index, row in duplicated.iterrows():
+            print("duplicated: {}".format(row["name"]))
+    results_no_duplicates = results
 
-    # TODO make code ocean ID a column
-    ## Make code ocean ID a column
-    # results_no_duplicates["code_ocean_asset_id"] = [
-    #    link["Code Ocean"][0] if ("Code Ocean" in link) and (len(link["Code Ocean"]) > 0) else ""
-    #    for link in results_no_duplicates["external_links"]
-    # ]
+    # Make code ocean ID a column
+    results_no_duplicates["code_ocean_asset_id"] = [
+        link["Code Ocean"][0] if ("Code Ocean" in link) and (len(link["Code Ocean"]) > 0) else ""
+        for link in results_no_duplicates["other_identifiers"]
+    ]
 
-    # return results_no_duplicates.reset_index(drop=True)
-
-    return results
+    return results_no_duplicates.reset_index(drop=True)
 
 
 def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
@@ -346,6 +343,11 @@ def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
     data_asset_IDs:  list of data asset IDs, i.e. the 16 hash string for the data asset in CO.
     mount_point: the mount point (folder) for the data asset. Default is None.
     """
+    warnings.warn(
+        "generate_data_assets_attach_params is Deprecated. "
+        + "We no longer recommend programmatically attaching assets. "
+        + "Instead attach manually or use the s3 location directly"
+    )
     data_assets = []
     for ID in data_asset_IDs:
         if mount_point:
@@ -368,7 +370,11 @@ def attach_data(data_asset_IDs, token_name="CUSTOM_KEY"):
     results = get_subject_assets(my_id)
     co_assets = attach_data(results['code_ocean_asset_id'].values)
     """
-
+    warnings.warn(
+        "attach_data is deprecated. "
+        + "We no longer recommend programmatically attaching assets. "
+        + "Instead attach manually or use the s3 location directly"
+    )
     # Check for too many assets
     if len(data_asset_IDs) > 100:
         warnings.warn(
@@ -418,6 +424,11 @@ def check_data_assets(co_assets, data_asset_IDs):
     This function is delicate because CO is strange about "ready",
     but its a useful quick check
     """
+    warnings.warn(
+        "check_data_assets is deprecated. "
+        + "We no longer recommend programmatically attaching assets. "
+        + "Instead attach manually or use the s3 location directly"
+    )
     if all([x.ready for x in co_assets if x.id in data_asset_IDs]):
         print("all data assets are ready")
     else:
