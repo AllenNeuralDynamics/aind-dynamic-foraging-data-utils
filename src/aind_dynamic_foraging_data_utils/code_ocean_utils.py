@@ -22,16 +22,18 @@ from codeocean.data_asset import DataAssetAttachParams
 
 from aind_dynamic_foraging_data_utils import nwb_utils
 
-def get_assets(metadata_version='v1',**kwargs):
-    '''
+
+def get_assets(metadata_version="v1", **kwargs):
+    """
     Top level function that queries either docdb v1 or v2
-    '''
+    """
     if metadata_version == "v1":
         return get_assets_v1(**kwargs)
     elif metadata_version == "v2":
         return get_assets_v2(**kwargs)
     else:
         raise ValueError(f"Unknown input argument {metadata_version}")
+
 
 def get_subject_assets(subject_id, **kwargs):
     """
@@ -192,20 +194,19 @@ def get_assets_v1(  # NOQA: C901
 
     return results_no_duplicates.reset_index(drop=True)
 
+
 def get_assets_v2(
     subjects=[],
     processed=True,
     task=[],
     modality=["behavior"],
     stage=[],
-    acquisition_version=['v1','v2'],
+    acquisition_version=["v2"],
     extra_filter={},
     input_projection={},
 ):
     # Create metadata client
-    client = MetadataDbClient(
-        host="api.allenneuraldynamics.org", version="v2" 
-    )
+    client = MetadataDbClient(host="api.allenneuraldynamics.org", version="v2")
 
     # Query based on subject id
     if len(subjects) == 0:
@@ -228,30 +229,73 @@ def get_assets_v2(
             modality_filter["$and"].append({"data_description.modality.abbreviation": m})
     else:
         modality_filter = {}
-    
-    # Filter by task
-    # TODO, parse by acquisition version here ?
-    if len(task) == 0:
-        task = [
-            "Uncoupled Baiting",
-            "Coupled Baiting",
-            "Uncoupled Without Baiting",
-            "Coupled Without Baiting",
-            "AindDynamicForaging"
-        ]
-    task_filter = {"acquisition.acquisition_type": {"$in": task}}
 
-    # stage_filter, acquisition.stimulus_epochs.curriculum_status
-    # extra_filter,
-    # projection=projection,
-    results = pd.DataFrame(client.retrieve_docdb_records(
-        filter_query={
-            **subject_filter,
-            **processed_filter,
-            **modality_filter
+    # Filter by task
+    #   "Uncoupled Baiting",
+    #   "Coupled Baiting",
+    #   "Uncoupled Without Baiting",
+    #   "Coupled Without Baiting",
+    # TODO, should update this section to filter for v1 or v2 or both acquisition systems
+    if len(task) > 0:
+        task_filter = {
+            "acquisition.stimulus_epochs.training_protocol_name": {"$in": task},
+            "acquisition.acquisition_type": "AindDynamicForaging",
         }
+    else:
+        task_filter = {
+            "acquisition.acquisition_type": "AindDynamicForaging",
+        }
+
+    # Filter by Stage
+    if len(stage) > 0:
+        stage_filter = {"acquisition.stimulus_epochs.curriculum_status": {"$in": stage}}
+    else:
+        stage_filter = {}
+
+    # extra_filter,
+    results = pd.DataFrame(
+        client.retrieve_docdb_records(
+            filter_query={
+                **subject_filter,
+                **processed_filter,
+                **modality_filter,
+                **task_filter,
+                **stage_filter,
+                **extra_filter,
+            },
+            projection=projection,
         )
-    return
+    )
+
+    # If nothing is found, return
+    if len(results) == 0:
+        print("No results found for {}".format(subjects))
+        return
+
+    # TODO, look for duplicate entries
+    # look for duplicate entries, taking the last by processing time
+    # results["session_name"] = [x.split("_processed")[0] for x in results["name"]]
+    # results = results.sort_values(by="name")
+    # results_no_duplicates = results.drop_duplicates(subset="session_name", keep="last").copy()
+
+    ## If there were duplicates, make a warning and print the duplicates
+    # if len(results) != len(results_no_duplicates):
+    #    duplicated = results[results.duplicated(subset="session_name", keep=False)]
+    #    warnings.warn("Duplicate session entries in docDB")
+    #    for index, row in duplicated.iterrows():
+    #        print("duplicated: {}".format(row["name"]))
+
+    # TODO make code ocean ID a column
+    ## Make code ocean ID a column
+    # results_no_duplicates["code_ocean_asset_id"] = [
+    #    link["Code Ocean"][0] if ("Code Ocean" in link) and (len(link["Code Ocean"]) > 0) else ""
+    #    for link in results_no_duplicates["external_links"]
+    # ]
+
+    # return results_no_duplicates.reset_index(drop=True)
+
+    return results
+
 
 def generate_data_asset_attach_params(data_asset_IDs, mount_point=None):
     """
