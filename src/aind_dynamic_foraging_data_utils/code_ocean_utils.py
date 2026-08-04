@@ -26,6 +26,32 @@ from aind_dynamic_foraging_data_utils import nwb_utils
 def get_assets(metadata_version="v1", **kwargs):
     """
     Top level function that queries either docdb v1 or v2
+    metadata_version (str) either "v1" or "v2"
+
+    Returns the docDB results for a subject. If duplicate entries exist, take the last
+    based on processing time. Skips pavlovian task.
+    equivalent to get_assets(subjects=[subject_id])
+
+    subject_id (str or int) subject id to get assets for from docDB
+    processed (bool) if True, look for processed assets. If False, look for raw assets
+    task (list of strings), if empty, include all task variants: Uncoupled Baiting,
+        Coupled Baiting, Uncoupled Without Baiting, Coupled Without Baiting.
+        If not empty, only include the task variants provided.
+    modality (list of strings), required data modality. If empty list, does not filter
+        modalities should the data modality abbreviations, for example: behavior,
+        behavior-videos, fib, ecephys
+    stage (list of strings), if empty, include all training stages. Otherwise, only
+        return stages included in this list. Possible stage names include STAGE_1,
+        STAGE_1_WARMUP, STAGE_2, STAGE_3, STAGE_4, STAGE_FINAL, GRADUATED, None
+    extra_filter (dict), docdb query
+    input_projection, what fields to return. If empty, returns everything unless searching
+        for all subjects (subjects = [])
+
+    if metadata_version == "v2", can additionally accept kwarg:
+        acquisition_version = ["v1","v2"]
+
+    Example
+    results = get_subject_assets(my_id)
     """
     if metadata_version == "v1":
         return get_assets_v1(**kwargs)
@@ -54,11 +80,11 @@ def get_subject_assets(subject_id, **kwargs):
         return stages included in this list. Possible stage names include STAGE_1,
         STAGE_1_WARMUP, STAGE_2, STAGE_3, STAGE_4, STAGE_FINAL, GRADUATED, None
     extra_filter (dict), docdb query
+    input_projection, what fields to return. If empty, returns everything unless searching
+        for all subjects (subjects = [])
 
     Example
     results = get_subject_assets(my_id)
-    co_assets = attach_data(results['code_ocean_asset_id'].values)
-
     """
     return get_assets(subjects=[subject_id], **kwargs)
 
@@ -88,10 +114,11 @@ def get_assets_v1(  # NOQA: C901
         return stages included in this list. Possible stage names include STAGE_1,
         STAGE_1_WARMUP, STAGE_2, STAGE_3, STAGE_4, STAGE_FINAL, GRADUATED, None
     extra_filter (dict), docdb query
+    input_projection, what fields to return. If empty, returns everything unless searching
+        for all subjects (subjects = [])
 
     Example
-    results = get_assets(subjects=[my_id])
-    co_assets = attach_data(results['code_ocean_asset_id'].values)
+    results = get_assets_v1(subjects=[my_id])
     """
     # Create metadata client
     client = MetadataDbClient(
@@ -205,6 +232,30 @@ def get_assets_v2(  # NOQA C901
     extra_filter={},
     input_projection={},
 ):
+    """
+    Returns the docDB v2 results for a subject. If duplicate entries exist, take the last
+    based on processing time. Skips pavlovian task.
+
+    subjects (a list of strs or ints) subject ids to get assets for from docDB
+    processed (bool) if True, look for processed assets. If False, look for raw assets
+    task (list of strings), if empty, include all task variants: Uncoupled Baiting,
+        Coupled Baiting, Uncoupled Without Baiting, Coupled Without Baiting.
+        If not empty, only include the task variants provided.
+    modality (list of strings), required data modality. If empty list, does not filter
+        modalities should the data modality abbreviations, for example: behavior,
+        behavior-videos, fib, ecephys
+    stage (list of strings), if empty, include all training stages. Otherwise, only
+        return stages included in this list. Possible stage names include STAGE_1,
+        STAGE_1_WARMUP, STAGE_2, STAGE_3, STAGE_4, STAGE_FINAL, GRADUATED, None
+    acquisition_version (list of strings), which acquisition version to search for, can be
+        "v1" and or "v2"
+    extra_filter (dict), docdb query
+    input_projection, what fields to return. If empty, returns everything unless searching
+        for all subjects (subjects = [])
+
+    Example
+    results = get_assets_v2(subjects=[my_id])
+    """
     # Create metadata client
     client = MetadataDbClient(host="api.allenneuraldynamics.org", version="v2")
 
