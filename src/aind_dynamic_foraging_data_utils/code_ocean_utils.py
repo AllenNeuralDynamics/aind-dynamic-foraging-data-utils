@@ -54,6 +54,11 @@ def get_assets(metadata_version="v1", **kwargs):
     results = get_subject_assets(my_id)
     """
     if metadata_version == "v1":
+        warnings.warn(
+            "Using metadata v1 will be phased out, switch your workflows now to metadata v2",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
         return get_assets_v1(**kwargs)
     elif metadata_version == "v2":
         return get_assets_v2(**kwargs)
@@ -61,7 +66,7 @@ def get_assets(metadata_version="v1", **kwargs):
         raise ValueError(f"Unknown input argument {metadata_version}")
 
 
-def get_subject_assets(subject_id, **kwargs):
+def get_subject_assets(subject_id, metadata_version="v1", **kwargs):
     """
     Returns the docDB results for a subject. If duplicate entries exist, take the last
     based on processing time. Skips pavlovian task.
@@ -86,6 +91,12 @@ def get_subject_assets(subject_id, **kwargs):
     Example
     results = get_subject_assets(my_id)
     """
+    if metadata_version == "v1":
+        warnings.warn(
+            "Using metadata v1 will be phased out, switch your workflows now to metadata v2",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
     return get_assets(subjects=[subject_id], **kwargs)
 
 
