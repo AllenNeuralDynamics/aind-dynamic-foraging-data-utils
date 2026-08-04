@@ -289,6 +289,7 @@ def get_assets_v2(
             "name": 1,
             "_id": 1,
             "subject.subject_id": 1,
+            "other_identifiers": 1,
             **input_projection,
         }
     elif len(input_projection) > 0:
