@@ -244,7 +244,7 @@ def get_assets_v2(  # NOQA C901
     task=[],
     modality=["behavior"],
     stage=[],
-    acquisition_version=["v2"],
+    acquisition_version=["v1", "v2"],
     extra_filter={},
     input_projection={},
 ):
