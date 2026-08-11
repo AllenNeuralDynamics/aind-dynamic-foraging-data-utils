@@ -11,6 +11,7 @@ Important utility functions for formatting the data
 
 import os
 import warnings
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -23,7 +24,7 @@ from codeocean.data_asset import DataAssetAttachParams
 from aind_dynamic_foraging_data_utils import nwb_utils
 
 
-def get_assets(metadata_version="v1", **kwargs):
+def get_assets(metadata_version: Literal["v1", "v2"] = "v1," **kwargs):
     """
     Top level function that queries either docdb v1 or v2
     metadata_version (str) either "v1" or "v2"
@@ -66,7 +67,7 @@ def get_assets(metadata_version="v1", **kwargs):
         raise ValueError(f"Unknown input argument {metadata_version}")
 
 
-def get_subject_assets(subject_id, metadata_version="v1", **kwargs):
+def get_subject_assets(subject_id, metadata_version: Literal["v1", "v2"] = "v1", **kwargs):
     """
     Returns the docDB results for a subject. If duplicate entries exist, take the last
     based on processing time. Skips pavlovian task.
@@ -97,7 +98,7 @@ def get_subject_assets(subject_id, metadata_version="v1", **kwargs):
             category=DeprecationWarning,
             stacklevel=2,
         )
-    return get_assets(subjects=[subject_id], **kwargs)
+    return get_assets(subjects=[subject_id], metadata_version=metadata_version, **kwargs)
 
 
 def get_assets_v1(  # NOQA: C901
