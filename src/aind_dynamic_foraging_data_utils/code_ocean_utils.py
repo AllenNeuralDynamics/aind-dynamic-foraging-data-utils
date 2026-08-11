@@ -24,7 +24,7 @@ from codeocean.data_asset import DataAssetAttachParams
 from aind_dynamic_foraging_data_utils import nwb_utils
 
 
-def get_assets(metadata_version: Literal["v1", "v2"] = "v1," ** kwargs):
+def get_assets(metadata_version: Literal["v1", "v2"] = "v1", **kwargs):
     """
     Top level function that queries either docdb v1 or v2
     metadata_version (str) either "v1" or "v2"
