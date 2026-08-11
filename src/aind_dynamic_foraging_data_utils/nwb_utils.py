@@ -472,6 +472,8 @@ def create_df_trials(  # NOQA C901
             | (df["left_reward_type"] == "manual")
             | (df["right_reward_type"] == "auto")
             | (df["left_reward_type"] == "auto")
+            | (df["right_reward_type"] == "automatic")
+            | (df["left_reward_type"] == "automatic")
         )
     else:
         df["extra_reward"] = (~df["earned_reward"]) & df["reward_time_in_session"].notnull()
