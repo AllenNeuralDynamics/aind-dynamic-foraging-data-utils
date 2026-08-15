@@ -670,7 +670,7 @@ def create_df_events(
     if index_trial_on == "goCue":
         trial_starts = nwb.trials.goCue_start_time[:] - t0
     elif index_trial_on == "trial_start":
-        trial_starts = nwb.trials.tart_time[:] - t0
+        trial_starts = nwb.trials.start_time[:] - t0
     last_stop = np.inf
     trial_index = []
     for index, e in df.iterrows():
