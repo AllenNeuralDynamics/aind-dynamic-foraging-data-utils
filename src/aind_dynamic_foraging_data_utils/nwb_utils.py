@@ -606,7 +606,7 @@ def create_df_events(  # NOQA C901
     ignore (List), event fields to ignore in dataframe creation
         Useful if e.g. continuous data in events.
         FIP data will always be ignored.
-    index_trial_on (str), how to index trials, must be in a column in nwb.trials that is 
+    index_trial_on (str), how to index trials, must be in a column in nwb.trials that is
         a timestamp, defines the start time of each trial
     """
 
