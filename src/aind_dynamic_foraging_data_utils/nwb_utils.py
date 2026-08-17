@@ -13,7 +13,6 @@ import os
 import re
 import warnings
 from datetime import date
-from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -592,7 +591,7 @@ def create_df_trials(  # NOQA C901
     return df
 
 
-def create_df_events(
+def create_df_events(  # NOQA C901
     nwb_filename,
     adjust_time=True,
     verbose=True,
@@ -673,7 +672,7 @@ def create_df_events(
     elif index_trial_on == "trial_start":
         trial_starts = nwb.trials.start_time[:] - t0
     else:
-        trial_start = nwb.trials[index_trial_on][:] - t0
+        trial_starts = nwb.trials[index_trial_on][:] - t0
 
     last_stop = np.inf
     trial_index = []
