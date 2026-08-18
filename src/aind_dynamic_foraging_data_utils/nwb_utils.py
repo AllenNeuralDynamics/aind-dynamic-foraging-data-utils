@@ -591,7 +591,13 @@ def create_df_trials(  # NOQA C901
     return df
 
 
-def create_df_events(nwb_filename, adjust_time=True, verbose=True, ignore=["sniff_detector"]):
+def create_df_events(  # NOQA C901
+    nwb_filename,
+    adjust_time=True,
+    verbose=True,
+    ignore=["sniff_detector"],
+    index_trial_on="goCue",
+):
     """
     returns a tidy dataframe of the events in the nwb file
 
@@ -600,6 +606,8 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True, ignore=["snif
     ignore (List), event fields to ignore in dataframe creation
         Useful if e.g. continuous data in events.
         FIP data will always be ignored.
+    index_trial_on (str), how to index trials, must be in a column in nwb.trials that is
+        a timestamp, defines the start time of each trial
     """
 
     nwb = load_nwb_from_filename(nwb_filename)
@@ -659,7 +667,13 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True, ignore=["snif
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
     # Add trial index for each event
-    trial_starts = nwb.trials.goCue_start_time[:] - t0
+    if index_trial_on == "goCue":
+        trial_starts = nwb.trials.goCue_start_time[:] - t0
+    elif index_trial_on == "trial_start":
+        trial_starts = nwb.trials.start_time[:] - t0
+    else:
+        trial_starts = nwb.trials[index_trial_on][:] - t0
+
     last_stop = np.inf
     trial_index = []
     for index, e in df.iterrows():
