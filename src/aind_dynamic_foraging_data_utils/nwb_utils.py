@@ -31,9 +31,9 @@ CHOICE_TIMING_TOLERANCE = 0.005
 def get_nwb_ses_idx(nwbfile):
     # Add session_idx with subject ID and session date info - JL
     if (
-        nwb.session_id.startswith("behavior")
-        or nwb.session_id.startswith("FIP")
-        or nwb.session_id.startswith("ecephys")
+        nwbfile.session_id.startswith("behavior")
+        or nwbfile.session_id.startswith("FIP")
+        or nwbfile.session_id.startswith("ecephys")
     ):        
         splits = nwbfile.session_id.split("_")
         subject_id = splits[1]
