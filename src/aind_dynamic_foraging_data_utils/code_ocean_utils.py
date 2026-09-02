@@ -313,10 +313,7 @@ def get_assets_v2(  # NOQA C901
 
         # Filter by Stage
         if len(stage) > 0:
-            stage_filter = {
-                "acquisition.stimulus_epochs.performance_metrics"
-                + ".output_parameters.task_parameters.stage_in_use": {"$in": stage}
-            }
+            stage_filter = {"acquisition.stimulus_epochs.curriculum_status": {"$in": stage}}
         else:
             stage_filter = {}
 
@@ -336,11 +333,7 @@ def get_assets_v2(  # NOQA C901
 
         # Filter by Stage
         if len(stage) > 0:
-            stage_filter = {
-                "acquisition.stimulus_epochs.performance_metrics.output_parameters.stage_name": {
-                    "$in": stage
-                }
-            }
+            stage_filter = {"acquisition.stimulus_epochs.curriculum_status": {"$in": stage}}
         else:
             stage_filter = {}
 
