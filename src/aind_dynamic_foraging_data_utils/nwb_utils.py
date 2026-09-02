@@ -324,7 +324,7 @@ def create_single_df_session(nwb_filename):
 
     df_session.columns = df_session.columns.droplevel("type")
     df_session = df_session.reset_index()
-    df_session["ses_idx"] = get_nwb_ses_idx(nwb_filename)
+    df_session["ses_idx"] = get_nwb_ses_idx(nwb)
     df_session = df_session.rename(columns={"variable": "session_num"})
     return df_session
 
