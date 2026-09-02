@@ -29,6 +29,26 @@ RESPONSE_TIMING_TOLERANCE = 0.005
 CHOICE_TIMING_TOLERANCE = 0.005
 
 
+def get_nwb_ses_idx(nwbfile):
+    """
+    Get the sess_idx for all of the dataframes
+    """
+    if (
+        nwbfile.session_id.startswith("behavior")
+        or nwbfile.session_id.startswith("FIP")
+        or nwbfile.session_id.startswith("ecephys")
+    ):
+        splits = nwbfile.session_id.split("_")
+        subject_id = splits[1]
+        session_date = splits[2]
+    else:
+        splits = nwbfile.session_id.split("_")
+        subject_id = splits[0]
+        session_date = splits[1]
+    ses_idx = subject_id + "_" + session_date
+    return ses_idx
+
+
 def load_nwb_from_filename(filename):
     """
     Load NWB from file, checking for HDF5 or Zarr
@@ -283,6 +303,7 @@ def create_df_session(nwb_filename):
     nwb_filename can be either a single nwb file, a single filepath
     or a list of nwb files, or a list of nwb filepaths
     """
+
     if (type(nwb_filename) is not str) and (hasattr(nwb_filename, "__iter__")):
         dfs = []
         for nwb_file in nwb_filename:
@@ -303,9 +324,7 @@ def create_single_df_session(nwb_filename):
 
     df_session.columns = df_session.columns.droplevel("type")
     df_session = df_session.reset_index()
-    df_session["ses_idx"] = (
-        df_session["subject_id"].values + "_" + df_session["session_date"].values
-    )
+    df_session["ses_idx"] = get_nwb_ses_idx(nwb)
     df_session = df_session.rename(columns={"variable": "session_num"})
     return df_session
 
@@ -334,25 +353,12 @@ def create_df_trials(  # NOQA C901
     # If we are given a filename, load the NWB object itself
     nwb = load_nwb_from_filename(nwb_filename)
 
-    # Parse subject and session_date
-    if (
-        nwb.session_id.startswith("behavior")
-        or nwb.session_id.startswith("FIP")
-        or nwb.session_id.startswith("ecephys")
-    ):
-        splits = nwb.session_id.split("_")
-        subject_id = splits[1]
-        session_date = splits[2]
-    else:
-        splits = nwb.session_id.split("_")
-        subject_id = splits[0]
-        session_date = splits[1]
-    ses_idx = subject_id + "_" + session_date
-
     # Build dataframe
     df = nwb.trials.to_dataframe().reset_index()
     df = df.rename(columns={"id": "trial"})
-    df["ses_idx"] = ses_idx
+    session_idx = get_nwb_ses_idx(nwb)
+    df["ses_idx"] = session_idx
+    session_date = session_idx.split('_')[1]
 
     # Adjust for gaps in trial start/stop, and use the last stop time
     last_stop = df.iloc[-1]["stop_time"]
@@ -691,6 +697,7 @@ def create_df_events(  # NOQA C901
     if (len(gocues) > 0) and (adjust_time):
         assert np.isclose(gocues.iloc[0]["timestamps"], 0, rtol=0.01)
     # TODO, need more checks here for time alignment on trial index.
+    df["ses_idx"] = get_nwb_ses_idx(nwb)
 
     if adjust_time and verbose:
         print(
@@ -758,17 +765,7 @@ def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     df = df.sort_values(by="timestamps")
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
-    # Add session_idx with subject ID and session date info - JL
-    if nwb.session_id.startswith("behavior") or nwb.session_id.startswith("FIP"):
-        splits = nwb.session_id.split("_")
-        subject_id = splits[1]
-        session_date = splits[2]
-    else:
-        splits = nwb.session_id.split("_")
-        subject_id = splits[0]
-        session_date = splits[1]
-    ses_idx = subject_id + "_" + session_date
-    df["ses_idx"] = ses_idx
+    df["ses_idx"] = get_nwb_ses_idx(nwb)
 
     if adjust_time and verbose:
         print(
