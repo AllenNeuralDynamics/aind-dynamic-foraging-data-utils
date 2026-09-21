@@ -358,7 +358,7 @@ def create_df_trials(  # NOQA C901
     df = df.rename(columns={"id": "trial"})
     session_idx = get_nwb_ses_idx(nwb)
     df["ses_idx"] = session_idx
-    session_date = session_idx.split('_')[1]
+    session_date = session_idx.split("_")[1]
 
     # Adjust for gaps in trial start/stop, and use the last stop time
     last_stop = df.iloc[-1]["stop_time"]
@@ -478,6 +478,8 @@ def create_df_trials(  # NOQA C901
             | (df["left_reward_type"] == "manual")
             | (df["right_reward_type"] == "auto")
             | (df["left_reward_type"] == "auto")
+            | (df["right_reward_type"] == "manual_go_cue_aligned")
+            | (df["left_reward_type"] == "manual_go_cue_aligned")
         )
     else:
         df["extra_reward"] = (~df["earned_reward"]) & df["reward_time_in_session"].notnull()
