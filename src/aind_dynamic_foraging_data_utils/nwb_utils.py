@@ -16,9 +16,7 @@ from datetime import date
 
 import numpy as np
 import pandas as pd
-from hdmf_zarr import NWBZarrIO
-from hdmf_zarr.utils import is_zarr_v2_file
-from hdmf_zarr.io import NWBZarrV2IO
+from hdmf_zarr import NWBZarrV2IO
 from pynwb import NWBHDF5IO
 
 # If we adjust time_in_session, adjust it to this
@@ -63,14 +61,9 @@ def load_nwb_from_filename(filename):
             or (filename.startswith("s3://") and filename.endswith(".nwb"))
             or (filename.startswith("s3://") and filename.endswith(".nwb.zarr"))
         ):
-            if is_zarr_v2_file(filename):
-                io = NWBZarrV2IO(filename, mode="r")
-                nwb = io.read()
-                return nwb
-            else:
-                io = NWBZarrIO(filename, mode="r")
-                nwb = io.read()
-                return nwb
+            io = NWBZarrV2IO(filename, mode="r")
+            nwb = io.read()
+            return nwb
         elif os.path.isfile(filename):
             io = NWBHDF5IO(filename, mode="r")
             nwb = io.read()
