@@ -20,7 +20,7 @@ dependencies = [
     'pandas',
     'numpy',
     'pynwb',
-    'hdmf_zarr',
+    'hdmf_zarr<0.14',
     'aind-data-access-api',
     'codeocean',
     's3fs >= 2025.10.0'

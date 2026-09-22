@@ -16,7 +16,7 @@ from datetime import date
 
 import numpy as np
 import pandas as pd
-from hdmf_zarr import NWBZarrV2IO
+from hdmf_zarr import NWBZarrIO
 from pynwb import NWBHDF5IO
 
 # If we adjust time_in_session, adjust it to this
@@ -61,7 +61,7 @@ def load_nwb_from_filename(filename):
             or (filename.startswith("s3://") and filename.endswith(".nwb"))
             or (filename.startswith("s3://") and filename.endswith(".nwb.zarr"))
         ):
-            io = NWBZarrV2IO(filename, mode="r")
+            io = NWBZarrIO(filename, mode="r")
             nwb = io.read()
             return nwb
         elif os.path.isfile(filename):
