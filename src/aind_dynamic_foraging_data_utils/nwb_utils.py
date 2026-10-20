@@ -29,6 +29,26 @@ RESPONSE_TIMING_TOLERANCE = 0.005
 CHOICE_TIMING_TOLERANCE = 0.005
 
 
+def get_nwb_ses_idx(nwbfile):
+    """
+    Get the sess_idx for all of the dataframes
+    """
+    if (
+        nwbfile.session_id.startswith("behavior")
+        or nwbfile.session_id.startswith("FIP")
+        or nwbfile.session_id.startswith("ecephys")
+    ):
+        splits = nwbfile.session_id.split("_")
+        subject_id = splits[1]
+        session_date = splits[2]
+    else:
+        splits = nwbfile.session_id.split("_")
+        subject_id = splits[0]
+        session_date = splits[1]
+    ses_idx = subject_id + "_" + session_date
+    return ses_idx
+
+
 def load_nwb_from_filename(filename):
     """
     Load NWB from file, checking for HDF5 or Zarr
@@ -283,6 +303,7 @@ def create_df_session(nwb_filename):
     nwb_filename can be either a single nwb file, a single filepath
     or a list of nwb files, or a list of nwb filepaths
     """
+
     if (type(nwb_filename) is not str) and (hasattr(nwb_filename, "__iter__")):
         dfs = []
         for nwb_file in nwb_filename:
@@ -303,20 +324,22 @@ def create_single_df_session(nwb_filename):
 
     df_session.columns = df_session.columns.droplevel("type")
     df_session = df_session.reset_index()
-    df_session["ses_idx"] = (
-        df_session["subject_id"].values + "_" + df_session["session_date"].values
-    )
+    df_session["ses_idx"] = get_nwb_ses_idx(nwb)
     df_session = df_session.rename(columns={"variable": "session_num"})
     return df_session
 
 
-def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
+def create_df_trials(  # NOQA C901
+    nwb_filename, adjust_time=True, verbose=True, ignore_errors=False
+):
     """
     Process nwb and create df_trials for every single session
 
     ARGS:
     nwb_filename (str or NWB object), the session to extract the trials from
     adjust_time (bool) if true, adjust t0 to be the first gocue
+    ignore_errors(bool) if true, ignore AssertionErrors about data quality.
+        Otherwise raise a warning about data quality
 
     RETURNS:
     A pandas dataframe containing the columns of nwb.trials plus:
@@ -330,21 +353,12 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     # If we are given a filename, load the NWB object itself
     nwb = load_nwb_from_filename(nwb_filename)
 
-    # Parse subject and session_date
-    if nwb.session_id.startswith("behavior") or nwb.session_id.startswith("FIP"):
-        splits = nwb.session_id.split("_")
-        subject_id = splits[1]
-        session_date = splits[2]
-    else:
-        splits = nwb.session_id.split("_")
-        subject_id = splits[0]
-        session_date = splits[1]
-    ses_idx = subject_id + "_" + session_date
-
     # Build dataframe
     df = nwb.trials.to_dataframe().reset_index()
     df = df.rename(columns={"id": "trial"})
-    df["ses_idx"] = ses_idx
+    session_idx = get_nwb_ses_idx(nwb)
+    df["ses_idx"] = session_idx
+    session_date = session_idx.split("_")[1]
 
     # Adjust for gaps in trial start/stop, and use the last stop time
     last_stop = df.iloc[-1]["stop_time"]
@@ -354,6 +368,10 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     # We skip these columns because they are how long the valve is open
     # not the times at which the valves were opened
     skip_cols = ["right_valve_open_time", "left_valve_open_time"]
+
+    # Manual fix for delay_start_time
+    if "delay_start_time" in df:
+        df["delay_start_time"] = pd.to_numeric(df["delay_start_time"], errors="coerce")
 
     # compute times relative to start of trial and start of session
     t0 = nwb.trials[SESSION_ALIGNMENT][0]
@@ -460,6 +478,8 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
             | (df["left_reward_type"] == "manual")
             | (df["right_reward_type"] == "auto")
             | (df["left_reward_type"] == "auto")
+            | (df["right_reward_type"] == "manual_go_cue_aligned")
+            | (df["left_reward_type"] == "manual_go_cue_aligned")
         )
     else:
         df["extra_reward"] = (~df["earned_reward"]) & df["reward_time_in_session"].notnull()
@@ -499,12 +519,16 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                 "Rewarded trials without reward time. \
                 This is likely due to manual rewards not being recorded in sessions from 2024"
             )
+        elif ignore_errors:
+            warnings.warn("Rewarded trials without reward time")
         else:
             raise AssertionError("Rewarded trials without reward time")
 
-    assert (
-        np.isnan(rewarded_df["choice_time_in_session"]).sum() == 0
-    ), "Rewarded trials without choice time"
+    if np.isnan(rewarded_df["choice_time_in_session"]).sum() != 0:
+        if ignore_errors:
+            warnings.warn("Rewarded trials without choice time")
+        else:
+            raise AssertionError("Rewarded trials without choice time")
 
     earned_df = rewarded_df.query("not extra_reward")
     if not np.all(earned_df["choice_time_in_session"] <= earned_df["reward_time_in_session"]):
@@ -513,12 +537,16 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                 "Reward before choice time. \
                 This is likely due to manual rewards not being recorded in sessions from 2024"
             )
+        elif ignore_errors:
+            warnings.warn("Reward before choice time")
         else:
             raise AssertionError("Reward before choice time")
 
-    assert np.all(
-        rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE
-    ), "Rewarded trial with negative choice_time_in_trial"
+    if not np.all(rewarded_df["choice_time_in_trial"] >= -CHOICE_TIMING_TOLERANCE):
+        if ignore_errors:
+            warnings.warn("Rewarded trial with negative choice_time_in_trial")
+        else:
+            raise AssertionError("Rewarded trial with negative choice_time_in_trial")
 
     check_rew_time = np.isnan(
         df.query("not earned_reward").query("not extra_reward")["reward_time_in_session"]
@@ -530,6 +558,8 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
                         this is likely because extra_rewards are not recorded",
                 UserWarning,
             )
+        elif ignore_errors:
+            warnings.warn("Unrewarded trials with reward time")
         else:
             raise AssertionError("Unrewarded trials with reward time")
 
@@ -569,7 +599,13 @@ def create_df_trials(nwb_filename, adjust_time=True, verbose=True):  # NOQA C901
     return df
 
 
-def create_df_events(nwb_filename, adjust_time=True, verbose=True, ignore=["sniff_detector"]):
+def create_df_events(  # NOQA C901
+    nwb_filename,
+    adjust_time=True,
+    verbose=True,
+    ignore=["sniff_detector"],
+    index_trial_on="goCue",
+):
     """
     returns a tidy dataframe of the events in the nwb file
 
@@ -578,6 +614,8 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True, ignore=["snif
     ignore (List), event fields to ignore in dataframe creation
         Useful if e.g. continuous data in events.
         FIP data will always be ignored.
+    index_trial_on (str), how to index trials, must be in a column in nwb.trials that is
+        a timestamp, defines the start time of each trial
     """
 
     nwb = load_nwb_from_filename(nwb_filename)
@@ -637,7 +675,13 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True, ignore=["snif
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
     # Add trial index for each event
-    trial_starts = nwb.trials.goCue_start_time[:] - t0
+    if index_trial_on == "goCue":
+        trial_starts = nwb.trials.goCue_start_time[:] - t0
+    elif index_trial_on == "trial_start":
+        trial_starts = nwb.trials.start_time[:] - t0
+    else:
+        trial_starts = nwb.trials[index_trial_on][:] - t0
+
     last_stop = np.inf
     trial_index = []
     for index, e in df.iterrows():
@@ -655,6 +699,7 @@ def create_df_events(nwb_filename, adjust_time=True, verbose=True, ignore=["snif
     if (len(gocues) > 0) and (adjust_time):
         assert np.isclose(gocues.iloc[0]["timestamps"], 0, rtol=0.01)
     # TODO, need more checks here for time alignment on trial index.
+    df["ses_idx"] = get_nwb_ses_idx(nwb)
 
     if adjust_time and verbose:
         print(
@@ -722,17 +767,7 @@ def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     df = df.sort_values(by="timestamps")
     df = df.dropna(subset="timestamps").reset_index(drop=True)
 
-    # Add session_idx with subject ID and session date info - JL
-    if nwb.session_id.startswith("behavior") or nwb.session_id.startswith("FIP"):
-        splits = nwb.session_id.split("_")
-        subject_id = splits[1]
-        session_date = splits[2]
-    else:
-        splits = nwb.session_id.split("_")
-        subject_id = splits[0]
-        session_date = splits[1]
-    ses_idx = subject_id + "_" + session_date
-    df["ses_idx"] = ses_idx
+    df["ses_idx"] = get_nwb_ses_idx(nwb)
 
     if adjust_time and verbose:
         print(
