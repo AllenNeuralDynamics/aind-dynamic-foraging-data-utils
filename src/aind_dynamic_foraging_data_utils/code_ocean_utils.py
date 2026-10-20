@@ -652,7 +652,7 @@ def get_foraging_model_info(
         # edge case of two sessions in one day
         if df is not None and len(df) > 1:
             num_trials_for_nwb = sess_i.finished_trials
-            df = df.query(f"n_trials == {num_trials_for_nwb}")
+            df = df.query(f"n_trials == {num_trials_for_nwb}").reset_index()
 
         if (
             df is None
@@ -668,6 +668,7 @@ def get_foraging_model_info(
 
         # Fitted parameters
         params = df["params"][0]
+        params["qvalue_spread"] = float(df["qvalue_spread"].iloc[0])
         params["ses_idx"] = str(sess_i["ses_idx"])
         df_sess_params.append(params)
 
