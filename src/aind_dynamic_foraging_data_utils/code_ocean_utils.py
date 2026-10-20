@@ -668,7 +668,7 @@ def get_foraging_model_info(
 
         # Fitted parameters
         params = df["params"][0]
-        params["qvalue_spread"] = df["qvalue_spread"]
+        params["qvalue_spread"] = df["qvalue_spread"].iloc[0]
         params["ses_idx"] = str(sess_i["ses_idx"])
         df_sess_params.append(params)
 
