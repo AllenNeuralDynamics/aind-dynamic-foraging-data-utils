@@ -568,7 +568,8 @@ def get_all_df_for_nwb(filename_sessions, interested_channels=None):
     for idx, nwb_file in enumerate(filename_sessions):
         nwb = nwb_utils.load_nwb_from_filename(nwb_file)
         ses_idx = nwb_file.split("/")[-1].replace("behavior_", "").rsplit("_", 1)[0]
-        print(f"CURRENTLY RUNNING {idx+1}/{len(filename_sessions)}: {ses_idx}")
+        full_ses_idx = nwb_file.split("/")[-1].replace("behavior_", "").rsplit(".", 1)[0]
+        print(f"CURRENTLY RUNNING {idx+1}/{len(filename_sessions)}: {full_ses_idx}")
         print("--------------------------------------------------")
 
         # Try to process df_trials, df_fip, df_events, otherwise go to next nwb_file
