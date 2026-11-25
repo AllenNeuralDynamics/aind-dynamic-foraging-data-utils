@@ -553,6 +553,12 @@ def get_all_df_for_nwb(filename_sessions, interested_channels=None):
     get_all_df_for_nwb gets all the dataframes for the NWB and
     returns the df_trials, df_events, df_fip
 
+    Args:
+        filename_sessions: the NWB files to read
+        interested_channels (list of str): full FIP stream names to keep, e.g.
+            ["G_0_dff-bright_mc-iso-IRLS", ...]. Only these are read out of each
+            file (see create_df_fip). None or [] reads every fiber stream.
+
     Returns:
         df_trials (pd.DataFrame): dataframe with each row a trial from sessions
         df_events (pd.DataFrame): dataframe with each row an event from sessions
@@ -584,9 +590,11 @@ def get_all_df_for_nwb(filename_sessions, interested_channels=None):
 
         # FIP
         try:
-            df_ses_fip = nwb_utils.create_df_fip(nwb, tidy=True)
-            if interested_channels:
-                df_ses_fip = df_ses_fip[df_ses_fip["event"].isin(interested_channels)]
+            # narrowed inside create_df_fip so the unwanted streams are never read,
+            # rather than read and then dropped
+            df_ses_fip = nwb_utils.create_df_fip(
+                nwb, tidy=True, interested_channels=interested_channels
+            )
             list_df_fip.append(df_ses_fip)
         except Exception as e:
             print(f"Skipping {ses_idx} due to error in df_fip: {e}")
