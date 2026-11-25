@@ -708,24 +708,13 @@ def create_df_events(  # NOQA C901
     return df
 
 
-def create_df_fip(
-    nwb_filename, tidy=True, adjust_time=True, verbose=True, interested_channels=None
-):
+def create_df_fip(nwb_filename, tidy=True, adjust_time=True, verbose=True):
     """
     returns a dataframe of the FIB data in the nwb file
     if tidy, return a tidy dataframe
     if not tidy, return pivoted by timestamp
 
     adjust_time (bool), set time of first goCue to t=0
-    interested_channels (list of str), the FIP data streams to read, named in full
-        (e.g. ["G_0_dff-bright_mc-iso-IRLS", ...]). Only these are read from the file.
-        A session holds the same patch cords under every preprocessing method it was
-        run with, so reading all of them costs several times the time and memory of
-        the one method an analysis uses. Streams not in the file are warned about and
-        skipped; if none are found the function returns None.
-        Passing this skips the fiber prefix filter and does NOT add
-        FIP_falling_time / FIP_rising_time, so name those explicitly if they are
-        wanted. Default None reads every fiber stream plus the rising/falling times.
     """
 
     nwb = load_nwb_from_filename(nwb_filename)
@@ -737,23 +726,15 @@ def create_df_fip(
 
     event_types = set(nwb_data.keys())
 
-    if interested_channels is not None:
-        requested = set(interested_channels)
-        for e in sorted(requested - event_types):
-            warnings.warn('FIP data stream "{}" not in NWB file'.format(e))
-        event_types &= requested
-    else:
-        channels = ["G", "R", "Iso"]
-        fibers = ["0", "1", "2", "3", "4"]
-        FIP_prefixes = [f"{c}_{f}" for c in channels for f in fibers]
+    channels = ["G", "R", "Iso"]
+    fibers = ["0", "1", "2", "3", "4"]
+    FIP_prefixes = [f"{c}_{f}" for c in channels for f in fibers]
 
-        # Filter out all fibers
-        event_types = {
-            k for k in event_types if any(k.startswith(prefix) for prefix in FIP_prefixes)
-        }
+    # Filter out all fibers
+    event_types = {k for k in event_types if any(k.startswith(prefix) for prefix in FIP_prefixes)}
 
-        event_types.add("FIP_falling_time")
-        event_types.add("FIP_rising_time")
+    event_types.add("FIP_falling_time")
+    event_types.add("FIP_rising_time")
 
     # If no FIB data available
     if len(event_types) == 0:
